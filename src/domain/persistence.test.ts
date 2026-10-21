@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { appendAuditLog } from "./auditLog";
 import {
   clearStorage,
   compareForImport,
   exportFileName,
+  listCorruptBackups,
   loadFromStorage,
   migrate,
   parseStateText,
@@ -98,12 +100,24 @@ describe("localStorage", () => {
     expect(result.ok).toBe(false);
   });
 
-  it("消去は、このアプリの名前空間のキーだけを消す", () => {
+  it("検証に通らない状態は保存しない（次回の起動で読めなくならないように）", () => {
     const storage = new FakeStorage();
-    storage.setItem(STORAGE_KEY, "x");
+    const bad = fixtureState();
+    bad.baselineItems = [];
+    const result = saveToStorage(storage, bad);
+    expect(result.ok).toBe(false);
+    expect(storage.getItem(STORAGE_KEY)).toBeNull();
+  });
+
+  it("消去は、このアプリの名前空間のキー（壊れたデータの退避を含む）だけを消す", () => {
+    const storage = new FakeStorage();
+    storage.setItem(STORAGE_KEY, "{broken");
+    loadFromStorage(storage, now);
+    expect(listCorruptBackups(storage)).toHaveLength(1);
     storage.setItem("production_system_sim:theme", "dark");
     clearStorage(storage);
     expect(storage.getItem(STORAGE_KEY)).toBeNull();
+    expect(listCorruptBackups(storage)).toEqual([]);
     expect(storage.getItem("production_system_sim:theme")).toBe("dark");
   });
 });
@@ -118,5 +132,57 @@ describe("読み込み時の比較（追記のみ）", () => {
     const incoming = structuredClone(current);
     incoming.auditLogs.push({ ...incoming.auditLogs[0], id: "a2", seq: 2 });
     expect(compareForImport(current, incoming)).toEqual({ kind: "appendOnly" });
+  });
+
+  it("新しい版（v2）と、その明細・監査ログを足しただけなら追記だけ", () => {
+    const current = fixtureState();
+    const incoming = structuredClone(current);
+    incoming.baselines.push({ ...incoming.baselines[0], id: "b2", version: 2, gate: "改版", revisionReason: "テスト" });
+    incoming.baselineItems.push({ ...incoming.baselineItems[0], id: "bi2", baselineId: "b2" });
+    incoming.auditLogs.push({ ...incoming.auditLogs[0], id: "a2", seq: 2, targetId: "b2", action: "baseline.revise" });
+    expect(compareForImport(current, incoming)).toEqual({ kind: "appendOnly" });
+  });
+
+  it("キーの順序が違うだけなら同じ内容とみなす（アプリが作ったログと読み込んだログ）", () => {
+    let n = 1;
+    const current = appendAuditLog(fixtureState(), {
+      operator: "テスト太郎", targetType: "proposal", targetId: "proposal", action: "proposal.update", before: null, after: { a: 1 },
+    }, new Date("2030-01-12T00:00:00.000Z"), () => `a${++n}`);
+    const reloaded = parseStateText(serializeState(current));
+    expect(reloaded.ok).toBe(true);
+    if (!reloaded.ok) return;
+    const reordered = structuredClone(reloaded.state);
+    reordered.auditLogs = reordered.auditLogs.map((a) => Object.fromEntries(Object.entries(a).reverse()) as typeof a);
+    expect(compareForImport(current, reordered)).toEqual({ kind: "appendOnly" });
+  });
+
+  it("確定済みのベースライン本体の変更・並び替え・スナップショットの減少は置き換え", () => {
+    const current = fixtureState();
+    const changed = structuredClone(current);
+    changed.baselines[0].comment = "書き換え";
+    expect(compareForImport(current, changed).kind).toBe("replaces");
+
+    const twoLogs = appendAuditLog(current, {
+      operator: "x", targetType: "proposal", targetId: "proposal", action: "proposal.update", before: null, after: null,
+    }, new Date("2030-01-12T00:00:00.000Z"), () => "a2");
+    const swapped = structuredClone(twoLogs);
+    swapped.auditLogs.reverse();
+    expect(compareForImport(twoLogs, swapped).kind).toBe("replaces");
+
+    const withSnapshot = structuredClone(current);
+    withSnapshot.evmSnapshots = [{
+      id: "s1", baselineId: "b1", asOf: "2030-01-11", pv: 10, ev: 5, ac: 4, bac: 10,
+      cpi: 1.25, spi: 0.5, eac: 8, consumptionRate: 0.4, progressRate: 0.5, createdAt: "2030-01-11T09:00:00.000Z",
+    }];
+    const result = compareForImport(withSnapshot, current);
+    expect(result).toEqual({ kind: "replaces", reasons: ["週次スナップショットが1件少なくなります"] });
+  });
+
+  it("実績やWBSの件数が減るデータは、理由を付けて置き換えと判定する", () => {
+    const current = fixtureState();
+    const fewer = structuredClone(current);
+    fewer.wbsNodes = fewer.wbsNodes.filter((n) => n.id !== "n3");
+    const result = compareForImport(current, fewer);
+    expect(result).toEqual({ kind: "replaces", reasons: ["WBS要素が1件少なくなります"] });
   });
 });

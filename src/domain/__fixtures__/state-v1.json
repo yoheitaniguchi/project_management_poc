@@ -39,13 +39,13 @@
     { "id": "s1", "workType": "レビュー", "sizeUnit": "PR", "hoursPerUnit": 1, "version": "仮1", "provisional": true }
   ],
   "baselines": [
-    { "id": "b1", "version": 1, "approvedOn": "2030-01-07", "approver": "テスト太郎", "gate": "G1+2", "comment": "テスト用", "revisionReason": null, "operatedAt": "2030-01-11T08:00:00.000Z" }
+    { "id": "b1", "version": 1, "approvedOn": "2030-01-07", "approver": "テスト太郎", "approverSelfDeclared": true, "gate": "G1+2", "comment": "テスト用", "revisionReason": null, "operatedAt": "2030-01-11T08:00:00.000Z" }
   ],
   "baselineItems": [
     { "id": "bi1", "baselineId": "b1", "wbsNodeId": "n2", "plannedHours": 10, "plannedStart": "2030-01-07", "plannedEnd": "2030-01-11" }
   ],
   "gateReviews": [
-    { "id": "g1", "decision": "approved", "reviewedOn": "2030-01-07", "reviewer": "テスト太郎", "comment": "テスト用", "baselineId": "b1", "operatedAt": "2030-01-11T08:00:00.000Z" }
+    { "id": "g1", "decision": "approved", "reviewedOn": "2030-01-07", "reviewer": "テスト太郎", "reviewerSelfDeclared": true, "comment": "テスト用", "baselineId": "b1", "operatedAt": "2030-01-11T08:00:00.000Z" }
   ],
   "timeEntries": [],
   "evmSnapshots": [],

@@ -3,11 +3,16 @@ import type { StorageStatus } from "../state/usePersistedState";
 
 export function StorageBanner({ status }: { status: StorageStatus }) {
   const messages: string[] = [];
-  if (status.corrupt) {
+  if (status.unavailable) {
+    messages.push(
+      "このブラウザでは保存領域を使えないため、自動保存できません。ページを閉じる前に必ずJSONを書き出してください。",
+    );
+  }
+  if (status.corrupt && !status.recovered) {
     messages.push(
       "このブラウザに保存されていたデータを読めなかったため、自動保存を止めています。" +
-        (status.corrupt.backupKey ? "元のデータは別の場所に退避しました。" : "") +
-        "最後に書き出したJSONを読み込んでください。",
+        (status.corrupt.backupKey ? "元のデータは消さずに別の場所に退避しました。" : "") +
+        "最後に書き出したJSONを読み込むと、自動保存を再開します。",
     );
   }
   if (status.saveError) {

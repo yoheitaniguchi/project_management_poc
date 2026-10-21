@@ -105,6 +105,8 @@ export interface Baseline {
   /** 承認日（実際に合意した日） */
   approvedOn: string;
   approver: string;
+  /** 承認者は自己申告（認証が無いため。CLAUDE.md 4章） */
+  approverSelfDeclared: true;
   /** 承認ゲート（v1は "G1+2"、改版は "改版"） */
   gate: string;
   comment: string;
@@ -129,6 +131,8 @@ export interface GateReview {
   decision: GateDecision;
   reviewedOn: string;
   reviewer: string;
+  /** 承認者は自己申告（認証が無いため。CLAUDE.md 4章） */
+  reviewerSelfDeclared: true;
   comment: string;
   /** 承認でベースラインを確定したときの版。差戻しは null */
   baselineId: string | null;

@@ -33,6 +33,12 @@ export const LIMITS = {
   maxStringLength: 10_000,
   /** 入れ子の深さの上限 */
   maxDepth: 20,
+  /** 工数（時間）の上限。WP 1件・明細 1件あたり */
+  maxHours: 10_000,
+  /** 実績 1件あたりの分の上限（1日分） */
+  maxMinutesPerEntry: 24 * 60,
+  /** 監査ログの変更前後の値（JSON文字列）の長さの上限。maxStringLength より短くし、保存したものを必ず読み戻せるようにする */
+  maxAuditPayloadLength: 2_000,
 };
 
 const FORBIDDEN_KEYS = new Set(["__proto__", "constructor", "prototype"]);
@@ -82,6 +88,12 @@ function isValidDateTime(s: string): boolean {
   return DATETIME_RE.test(s) && !Number.isNaN(Date.parse(s)) && isValidDate(s.slice(0, 10));
 }
 
+/** エラー文言に入れる項目名は短く切る（非常に長いキー名で文言が膨らまないように） */
+const shorten = (s: string) => (s.length > 40 ? `${s.slice(0, 40)}…` : s);
+
+/** 日時（ISO 8601）を時刻として比べるための値。文字列の大小はミリ秒の書き方で前後が逆になるため使わない */
+export const timeOf = (iso: string) => Date.parse(iso);
+
 /** 項目を1つずつ読み、問題があれば errors に日本語で積む */
 class Reader {
   readonly errors: string[] = [];
@@ -93,7 +105,7 @@ class Reader {
     }
     const allowed = new Set(keys);
     for (const k of Object.keys(v)) {
-      if (!allowed.has(k)) this.errors.push(`${path}：知らない項目「${k}」があります`);
+      if (!allowed.has(k)) this.errors.push(`${path}：知らない項目「${shorten(k)}」があります`);
     }
     for (const k of keys) {
       if (!Object.prototype.hasOwnProperty.call(v, k)) this.errors.push(`${path}：項目「${k}」がありません`);
@@ -133,18 +145,19 @@ class Reader {
     return o[k] === null ? null : this.str(o, k, path);
   }
 
-  num(o: Rec, k: string, path: string, opts: { min?: number; integer?: boolean } = {}): number {
+  num(o: Rec, k: string, path: string, opts: { min?: number; max?: number; integer?: boolean } = {}): number {
     const v = o[k];
     if (typeof v !== "number" || !Number.isFinite(v)) {
       this.errors.push(`${path}.${k}：数値ではありません`);
       return 0;
     }
     if (opts.min !== undefined && v < opts.min) this.errors.push(`${path}.${k}：${opts.min}未満です`);
+    if (opts.max !== undefined && v > opts.max) this.errors.push(`${path}.${k}：上限（${opts.max}）を超えています`);
     if (opts.integer && !Number.isInteger(v)) this.errors.push(`${path}.${k}：整数ではありません`);
     return v;
   }
 
-  nullableNum(o: Rec, k: string, path: string, opts: { min?: number } = {}): number | null {
+  nullableNum(o: Rec, k: string, path: string, opts: { min?: number; max?: number } = {}): number | null {
     return o[k] === null ? null : this.num(o, k, path, opts);
   }
 
@@ -199,7 +212,7 @@ function readProposal(r: Reader, v: unknown, p: string): Proposal | null {
   return {
     background: r.str(o, "background", p),
     issues: r.str(o, "issues", p),
-    estimatedHours: r.nullableNum(o, "estimatedHours", p, { min: 0 }),
+    estimatedHours: r.nullableNum(o, "estimatedHours", p, { min: 0, max: LIMITS.maxHours * 10 }),
     status: r.oneOf(o, "status", p, ["draft", "approved", "returned"] as const),
     approvedOn: r.nullableDate(o, "approvedOn", p),
   };
@@ -291,7 +304,7 @@ function readEstimate(r: Reader, v: unknown, p: string): Estimate | null {
   return {
     id: r.str(o, "id", p, { nonEmpty: true }),
     wbsNodeId: r.str(o, "wbsNodeId", p),
-    hours: r.num(o, "hours", p, { min: 0 }),
+    hours: r.num(o, "hours", p, { min: 0, max: LIMITS.maxHours }),
     basis: r.str(o, "basis", p),
     standardId: r.nullableStr(o, "standardId", p),
   };
@@ -304,20 +317,24 @@ function readStandard(r: Reader, v: unknown, p: string): EstimationStandard | nu
     id: r.str(o, "id", p, { nonEmpty: true }),
     workType: r.str(o, "workType", p),
     sizeUnit: r.str(o, "sizeUnit", p),
-    hoursPerUnit: r.num(o, "hoursPerUnit", p, { min: 0 }),
+    hoursPerUnit: r.num(o, "hoursPerUnit", p, { min: 0, max: LIMITS.maxHours }),
     version: r.str(o, "version", p),
     provisional: r.bool(o, "provisional", p),
   };
 }
 
 function readBaseline(r: Reader, v: unknown, p: string): Baseline | null {
-  const o = r.record(v, p, ["id", "version", "approvedOn", "approver", "gate", "comment", "revisionReason", "operatedAt"]);
+  const o = r.record(v, p, [
+    "id", "version", "approvedOn", "approver", "approverSelfDeclared", "gate", "comment", "revisionReason", "operatedAt",
+  ]);
   if (!o) return null;
+  if (o.approverSelfDeclared !== true) r.errors.push(`${p}.approverSelfDeclared：true ではありません`);
   return {
     id: r.str(o, "id", p, { nonEmpty: true }),
     version: r.num(o, "version", p, { min: 1, integer: true }),
     approvedOn: r.date(o, "approvedOn", p),
     approver: r.str(o, "approver", p, { nonEmpty: true }),
+    approverSelfDeclared: true,
     gate: r.str(o, "gate", p, { nonEmpty: true }),
     comment: r.str(o, "comment", p),
     revisionReason: r.nullableStr(o, "revisionReason", p),
@@ -332,20 +349,24 @@ function readBaselineItem(r: Reader, v: unknown, p: string): BaselineItem | null
     id: r.str(o, "id", p, { nonEmpty: true }),
     baselineId: r.str(o, "baselineId", p),
     wbsNodeId: r.str(o, "wbsNodeId", p),
-    plannedHours: r.num(o, "plannedHours", p, { min: 0 }),
+    plannedHours: r.num(o, "plannedHours", p, { min: 0, max: LIMITS.maxHours }),
     plannedStart: r.date(o, "plannedStart", p),
     plannedEnd: r.date(o, "plannedEnd", p),
   };
 }
 
 function readGateReview(r: Reader, v: unknown, p: string): GateReview | null {
-  const o = r.record(v, p, ["id", "decision", "reviewedOn", "reviewer", "comment", "baselineId", "operatedAt"]);
+  const o = r.record(v, p, [
+    "id", "decision", "reviewedOn", "reviewer", "reviewerSelfDeclared", "comment", "baselineId", "operatedAt",
+  ]);
   if (!o) return null;
+  if (o.reviewerSelfDeclared !== true) r.errors.push(`${p}.reviewerSelfDeclared：true ではありません`);
   return {
     id: r.str(o, "id", p, { nonEmpty: true }),
     decision: r.oneOf(o, "decision", p, ["approved", "returned"] as const),
     reviewedOn: r.date(o, "reviewedOn", p),
     reviewer: r.str(o, "reviewer", p, { nonEmpty: true }),
+    reviewerSelfDeclared: true,
     comment: r.str(o, "comment", p),
     baselineId: r.nullableStr(o, "baselineId", p),
     operatedAt: r.dateTime(o, "operatedAt", p),
@@ -360,7 +381,7 @@ function readTimeEntry(r: Reader, v: unknown, p: string): TimeEntry | null {
     wbsNodeId: r.str(o, "wbsNodeId", p),
     memberId: r.nullableStr(o, "memberId", p),
     workDate: r.date(o, "workDate", p),
-    minutes: r.num(o, "minutes", p, { min: 0, integer: true }),
+    minutes: r.num(o, "minutes", p, { min: 0, max: LIMITS.maxMinutesPerEntry, integer: true }),
     source: r.oneOf(o, "source", p, ["asana_csv", "manual_csv"] as const),
     uniqueKey: r.str(o, "uniqueKey", p, { nonEmpty: true }),
   };
@@ -408,7 +429,7 @@ function readAuditLog(r: Reader, v: unknown, p: string): AuditLog | null {
   ]);
   if (!o) return null;
   if (o.operatorSelfDeclared !== true) r.errors.push(`${p}.operatorSelfDeclared：true ではありません`);
-  return {
+  const entry: AuditLog = {
     id: r.str(o, "id", p, { nonEmpty: true }),
     seq: r.num(o, "seq", p, { min: 1, integer: true }),
     at: r.dateTime(o, "at", p),
@@ -420,6 +441,11 @@ function readAuditLog(r: Reader, v: unknown, p: string): AuditLog | null {
     before: r.nullableStr(o, "before", p),
     after: r.nullableStr(o, "after", p),
   };
+  for (const k of ["before", "after"] as const) {
+    const x = entry[k];
+    if (x !== null && x.length > LIMITS.maxAuditPayloadLength) r.errors.push(`${p}.${k}：文字数が上限を超えています`);
+  }
+  return entry;
 }
 
 function readSettings(r: Reader, v: unknown, p: string): Settings | null {
@@ -432,7 +458,7 @@ function readSettings(r: Reader, v: unknown, p: string): Settings | null {
     }
     return x;
   });
-  return { alertThresholdPoints: r.num(o, "alertThresholdPoints", p, { min: 0 }), holidays };
+  return { alertThresholdPoints: r.num(o, "alertThresholdPoints", p, { min: 0, max: 100 }), holidays };
 }
 
 /** 4章のルールのうち、ファイルの中だけで確かめられる整合性 */
@@ -466,6 +492,9 @@ export function checkIntegrity(s: AppState): string[] {
     if (id !== null && !set.has(id)) errors.push(`${path}：存在しない${what}「${id}」を参照しています`);
   };
   ref("project.pmMemberId", s.project.pmMemberId, memberIds, "メンバー");
+  if (s.proposal.status === "approved" && s.proposal.approvedOn === null) {
+    errors.push("proposal：承認済みなのに承認日がありません");
+  }
   s.objectiveTraces.forEach((t, i) => {
     ref(`objectiveTraces[${i}].objectiveId`, t.objectiveId, objectiveIds, "目的");
     ref(`objectiveTraces[${i}].wbsNodeId`, t.wbsNodeId, nodeIds, "WBS要素");
@@ -481,12 +510,25 @@ export function checkIntegrity(s: AppState): string[] {
     ref(`estimates[${i}].wbsNodeId`, e.wbsNodeId, nodeIds, "WBS要素");
     ref(`estimates[${i}].standardId`, e.standardId, standardIds, "見積基準");
   });
+  const nodeById = new Map(s.wbsNodes.map((n) => [n.id, n]));
+  const itemPairs = new Set<string>();
   s.baselineItems.forEach((b, i) => {
     ref(`baselineItems[${i}].baselineId`, b.baselineId, baselineIds, "ベースライン");
     ref(`baselineItems[${i}].wbsNodeId`, b.wbsNodeId, nodeIds, "WBS要素");
     if (b.plannedStart > b.plannedEnd) errors.push(`baselineItems[${i}]：計画開始日が計画終了日より後です`);
+    if (b.plannedHours <= 0) errors.push(`baselineItems[${i}]：計画工数が0です`);
+    const node = nodeById.get(b.wbsNodeId);
+    if (node && node.kind !== "work_package") errors.push(`baselineItems[${i}]：phase は明細にできません`);
+    if (node && node.excluded) errors.push(`baselineItems[${i}]：対象外のWPは明細にできません`);
+    const pair = `${b.baselineId}\u0000${b.wbsNodeId}`;
+    if (itemPairs.has(pair)) errors.push(`baselineItems[${i}]：同じ版に同じWBS要素の明細が重複しています`);
+    itemPairs.add(pair);
   });
-  s.gateReviews.forEach((g, i) => ref(`gateReviews[${i}].baselineId`, g.baselineId, baselineIds, "ベースライン"));
+  s.gateReviews.forEach((g, i) => {
+    ref(`gateReviews[${i}].baselineId`, g.baselineId, baselineIds, "ベースライン");
+    if (g.decision === "approved" && g.baselineId === null) errors.push(`gateReviews[${i}]：承認なのに確定した版がありません`);
+    if (g.decision === "returned" && g.baselineId !== null) errors.push(`gateReviews[${i}]：差戻しなのに版が指定されています`);
+  });
   s.timeEntries.forEach((t, i) => {
     ref(`timeEntries[${i}].wbsNodeId`, t.wbsNodeId, nodeIds, "WBS要素");
     ref(`timeEntries[${i}].memberId`, t.memberId, memberIds, "メンバー");
@@ -520,21 +562,25 @@ export function checkIntegrity(s: AppState): string[] {
   if (versions.some((v, i) => v !== i + 1)) {
     errors.push(`baselines：版番号が1から連番になっていません（${versions.join(",")}）`);
   }
-  // 改版（v2以降）には改版理由が要る。各版に確定・改版の監査ログがある
+  // 各版について：明細が1件以上ある。v1は確定（baseline.confirm）、v2以降は改版（baseline.revise）の監査ログがある。
+  // v2以降は改版理由が要る。v1は G1+2 承認と同じ操作で確定するので、その版を指す承認の記録がある
   for (const b of s.baselines) {
+    if (!s.baselineItems.some((x) => x.baselineId === b.id)) errors.push(`baselines：v${b.version}に明細がありません`);
     if (b.version >= 2 && (b.revisionReason === null || b.revisionReason.trim() === "")) {
       errors.push(`baselines：v${b.version}に改版理由がありません`);
     }
-    const logged = s.auditLogs.some(
-      (a) => a.targetType === "baseline" && a.targetId === b.id && (a.action === "baseline.confirm" || a.action === "baseline.revise"),
-    );
-    if (!logged) errors.push(`baselines：v${b.version}の確定の監査ログがありません`);
+    const expectedAction = b.version === 1 ? "baseline.confirm" : "baseline.revise";
+    const logged = s.auditLogs.some((a) => a.targetType === "baseline" && a.targetId === b.id && a.action === expectedAction);
+    if (!logged) errors.push(`baselines：v${b.version}の${b.version === 1 ? "確定" : "改版"}の監査ログがありません`);
+    if (b.version === 1 && !s.gateReviews.some((g) => g.decision === "approved" && g.baselineId === b.id)) {
+      errors.push("baselines：v1に対応するG1+2承認の記録がありません");
+    }
   }
 
   // 監査ログは1からの連番で、日時は前のログより前にならない
   s.auditLogs.forEach((a, i) => {
     if (a.seq !== i + 1) errors.push(`auditLogs[${i}]：連番が${i + 1}ではありません（${a.seq}）`);
-    if (i > 0 && a.at < s.auditLogs[i - 1].at) errors.push(`auditLogs[${i}]：日時が前のログより前です`);
+    if (i > 0 && timeOf(a.at) < timeOf(s.auditLogs[i - 1].at)) errors.push(`auditLogs[${i}]：日時が前のログより前です`);
   });
 
   return errors;
