@@ -12,6 +12,11 @@ test-results/
 # アプリが書き出すJSON・CSVは、ファイル名の先頭が必ず「pmpoc-」になる
 pmpoc-*
 exports/
+# Asanaから書き出したCSVなど、名前をアプリが決めないファイルも除外する（SEC-003）。
+# テスト用の架空データの置き場だけは例外にする
+*.csv
+*.tsv
+!src/**/__fixtures__/**
 
 # エディタ・OS
 .DS_Store

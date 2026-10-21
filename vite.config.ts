@@ -16,11 +16,15 @@ function productionCsp(): Plugin {
   return {
     name: "production-csp",
     apply: "build",
-    transformIndexHtml(html) {
-      return html.replace(
-        "<head>",
-        `<head>\n    <meta http-equiv="Content-Security-Policy" content="${PRODUCTION_CSP}" />`,
-      );
+    // 文字列の置換ではなくViteのタグ注入を使い、<head> の書き方に依らず必ず入るようにする（SEC-002）
+    transformIndexHtml() {
+      return [
+        {
+          tag: "meta",
+          attrs: { "http-equiv": "Content-Security-Policy", content: PRODUCTION_CSP },
+          injectTo: "head-prepend",
+        },
+      ];
     },
   };
 }
