@@ -11,9 +11,11 @@ interface Props {
   onImport: () => void;
   onExportBackups: (() => void) | null;
   onClear: () => void;
+  /** 他のタブで変更されて読み取り専用のとき、消去を止める理由 */
+  readOnlyReason: string | null;
 }
 
-export function AppHeader({ state, now, onGoToProposal, onExport, onImport, onExportBackups, onClear }: Props) {
+export function AppHeader({ state, now, onGoToProposal, onExport, onImport, onExportBackups, onClear, readOnlyReason }: Props) {
   const lastSync = state.syncRuns.at(-1);
   const reminder = exportReminder(state, now);
   const reminderText =
@@ -21,9 +23,11 @@ export function AppHeader({ state, now, onGoToProposal, onExport, onImport, onEx
       ? "まだ一度もJSONを書き出していません"
       : reminder.kind === "stale"
         ? `最後にJSONを書き出してから${reminder.days}日たっています（${STALE_DAYS}日以上）`
-        : reminder.kind === "afterBaseline"
-          ? `ベースラインv${reminder.version}を確定した後に、JSONを書き出していません`
-          : null;
+        : reminder.kind === "afterRecord"
+          ? `${reminder.record}の後に、JSONを書き出していません`
+          : reminder.kind === "futureExport"
+            ? "最終書き出しの日時が今より後になっています（端末の時計を確認してください）"
+            : null;
 
   return (
     <header className="app-header">
@@ -33,7 +37,7 @@ export function AppHeader({ state, now, onGoToProposal, onExport, onImport, onEx
           <button type="button" onClick={onExport}>
             JSONを書き出す
           </button>
-          <button type="button" onClick={onImport}>
+          <button type="button" onClick={onImport} disabled={readOnlyReason !== null} aria-describedby={readOnlyReason ? "readonly-reason" : undefined}>
             JSONを読み込む
           </button>
           {onExportBackups && (
@@ -41,11 +45,22 @@ export function AppHeader({ state, now, onGoToProposal, onExport, onImport, onEx
               退避したデータを書き出す
             </button>
           )}
-          <button type="button" className="button--danger" onClick={onClear}>
+          <button
+            type="button"
+            className="button--danger"
+            onClick={onClear}
+            disabled={readOnlyReason !== null}
+            aria-describedby={readOnlyReason ? "readonly-reason" : undefined}
+          >
             このブラウザの保存データを消去
           </button>
         </nav>
       </div>
+      {readOnlyReason && (
+        <p id="readonly-reason" className="hint">
+          {readOnlyReason}
+        </p>
+      )}
 
       <section aria-label="案件の目的" className="app-header__objectives">
         {state.objectives.length === 0 ? (
@@ -87,7 +102,7 @@ export function AppHeader({ state, now, onGoToProposal, onExport, onImport, onEx
       </dl>
       {reminderText && (
         <p className="app-header__reminder" role="status">
-          <strong>要対応：</strong>
+          <strong>書き出しのお願い：</strong>
           {reminderText}。正式な記録として、JSONを書き出してPCに保存してください。{" "}
           <button type="button" onClick={onExport}>
             今すぐ書き出す

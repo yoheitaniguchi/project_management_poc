@@ -1,5 +1,5 @@
 // 確認ダイアログ。ブラウザの <dialog> の showModal を使い、フォーカスを中に閉じ込め、Esc で閉じる。
-// 閉じたら、開く前にフォーカスがあった要素に戻す
+// 閉じたら、開く前にフォーカスがあった要素に戻す。その要素が消えていたら（削除の確認など）、画面の見出しに戻す
 import { useEffect, useRef, type ReactNode } from "react";
 
 interface Props {
@@ -16,7 +16,8 @@ export function Modal({ title, onClose, children }: Props) {
     dialog?.showModal();
     return () => {
       dialog?.close();
-      opener?.focus();
+      if (opener?.isConnected) opener.focus();
+      else document.querySelector<HTMLElement>("main h1")?.focus();
     };
   }, []);
   return (

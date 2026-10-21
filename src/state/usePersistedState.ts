@@ -73,24 +73,35 @@ export function usePersistedState() {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
+  /**
+   * 状態を変える。反映したら true、反映しなかったら false を返す
+   * （読み取り専用のタブ、または検証・比較で受け付けられなかった場合）。呼び出し側は false なら成功と表示しないこと
+   */
   const dispatch = useCallback(
-    (action: Action) => {
+    (action: Action): boolean => {
       // 読み取り専用のタブでは状態を変えない
-      if (changedInOtherTab) return;
+      if (changedInOtherTab) return false;
+      const applied = reducer(stateRef.current, action) !== stateRef.current;
       // 読み込みが受け付けられたら（状態が変わったら）、壊れた保存データを置き換えてよい
-      if (action.type === "replaceState" && reducer(stateRef.current, action) !== stateRef.current) setRecovered(true);
+      if (action.type === "replaceState" && applied) setRecovered(true);
       dispatchRaw(action);
+      return applied;
     },
     [changedInOtherTab],
   );
 
-  /** 「このブラウザの保存データを消去」。画面の状態も初期化し、消した後にメモリ上の状態を書き戻さない */
-  const clearSavedData = useCallback(() => {
+  /**
+   * 「このブラウザの保存データを消去」。画面の状態も初期化し、消した後にメモリ上の状態を書き戻さない。
+   * 読み取り専用のタブでは消さない（別のタブが保存した最新のデータを消してしまうため）
+   */
+  const clearSavedData = useCallback((): boolean => {
+    if (changedInOtherTab) return false;
     const storage = getStorage();
     if (storage) clearStorage(storage);
     setRecovered(true);
     dispatchRaw({ type: "reset" });
-  }, []);
+    return true;
+  }, [changedInOtherTab]);
 
   /** 退避した壊れた保存データ（書き出して調べる用） */
   const readCorruptBackups = useCallback((): { key: string; text: string }[] => {

@@ -1,5 +1,5 @@
 // 企画・目的画面（CLAUDE.md 7.1）：背景・課題、体制・ルート、目的と成功指標、G1+2承認パネル
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   addMember,
   addObjective,
@@ -26,17 +26,34 @@ interface Props {
   run: Run;
   newId: () => string;
   onGoToPlan: () => void;
+  /** 初めて開いたときの案内（ページの見出しの後に出す） */
+  onboarding: ReactNode;
+}
+
+type SectionId = "proposal" | "objectives" | "members";
+
+/** 操作が拒否された理由を、その操作をした区画の中に出す */
+function SectionError({ error, section }: { error: { section: SectionId; message: string } | null; section: SectionId }) {
+  if (!error || error.section !== section) return null;
+  return (
+    <p className="message--error" role="alert">
+      {error.message}
+    </p>
+  );
 }
 
 const ROLES = Object.keys(ROLE_LABELS) as Role[];
 const ROUTES = Object.keys(ROUTE_LABELS) as Route[];
 const AFFILIATIONS = Object.keys(AFFILIATION_LABELS) as Affiliation[];
 
-export function ProposalPage({ state, run, newId, onGoToPlan }: Props) {
-  const [error, setError] = useState<string | null>(null);
+export function ProposalPage({ state, run, newId, onGoToPlan, onboarding }: Props) {
+  const [error, setError] = useState<{ section: SectionId; message: string } | null>(null);
   const [removingObjective, setRemovingObjective] = useState<string | null>(null);
   const [removingMember, setRemovingMember] = useState<string | null>(null);
-  const exec = (op: (s: AppState) => OpResult) => setError(run(op));
+  const exec = (section: SectionId, op: (s: AppState) => OpResult) => {
+    const message = run(op);
+    setError(message === null ? null : { section, message });
+  };
   const { proposal, project } = state;
 
   const objectiveToRemove = state.objectives.find((o) => o.id === removingObjective);
@@ -44,25 +61,22 @@ export function ProposalPage({ state, run, newId, onGoToPlan }: Props) {
 
   return (
     <div className="page">
-      <h1>企画・目的</h1>
-      {error && (
-        <p className="message--error" role="alert">
-          {error}
-        </p>
-      )}
+      <h1 tabIndex={-1}>企画・目的</h1>
+      {onboarding}
 
       <section aria-labelledby="sec-proposal">
         <h2 id="sec-proposal">企画</h2>
+        <SectionError error={error} section="proposal" />
         <p>状態：{PROPOSAL_STATUS_LABELS[proposal.status]}</p>
         <div className="form-grid">
           <label htmlFor="project-name">案件名</label>
-          <input id="project-name" value={project.name} onChange={(e) => exec((s) => updateProject(s, { name: e.target.value }))} />
+          <input id="project-name" value={project.name} onChange={(e) => exec("proposal", (s) => updateProject(s, { name: e.target.value }))} />
           <label htmlFor="background">背景</label>
-          <textarea id="background" rows={3} value={proposal.background} onChange={(e) => exec((s) => updateProposal(s, { background: e.target.value }))} />
+          <textarea id="background" rows={3} value={proposal.background} onChange={(e) => exec("proposal", (s) => updateProposal(s, { background: e.target.value }))} />
           <label htmlFor="issues">課題</label>
-          <textarea id="issues" rows={3} value={proposal.issues} onChange={(e) => exec((s) => updateProposal(s, { issues: e.target.value }))} />
+          <textarea id="issues" rows={3} value={proposal.issues} onChange={(e) => exec("proposal", (s) => updateProposal(s, { issues: e.target.value }))} />
           <label htmlFor="scope">スコープ</label>
-          <textarea id="scope" rows={2} value={project.scope} onChange={(e) => exec((s) => updateProject(s, { scope: e.target.value }))} />
+          <textarea id="scope" rows={2} value={project.scope} onChange={(e) => exec("proposal", (s) => updateProject(s, { scope: e.target.value }))} />
           <label htmlFor="estimated">想定工数（時間）</label>
           <input
             id="estimated"
@@ -70,10 +84,10 @@ export function ProposalPage({ state, run, newId, onGoToPlan }: Props) {
             min={0}
             step={0.5}
             value={proposal.estimatedHours ?? ""}
-            onChange={(e) => exec((s) => updateProposal(s, { estimatedHours: e.target.value === "" ? null : Number(e.target.value) }))}
+            onChange={(e) => exec("proposal", (s) => updateProposal(s, { estimatedHours: e.target.value === "" ? null : Number(e.target.value) }))}
           />
           <label htmlFor="route">ルート</label>
-          <select id="route" value={project.route} onChange={(e) => exec((s) => updateProject(s, { route: e.target.value as Route }))}>
+          <select id="route" value={project.route} onChange={(e) => exec("proposal", (s) => updateProject(s, { route: e.target.value as Route }))}>
             {ROUTES.map((r) => (
               <option key={r} value={r}>
                 {ROUTE_LABELS[r]}
@@ -85,16 +99,18 @@ export function ProposalPage({ state, run, newId, onGoToPlan }: Props) {
             <input
               type="checkbox"
               aria-labelledby="release-label"
+              aria-describedby="release-hint"
               checked={project.hasRelease}
-              onChange={(e) => exec((s) => updateProject(s, { hasRelease: e.target.checked }))}
+              onChange={(e) => exec("proposal", (s) => updateProject(s, { hasRelease: e.target.checked }))}
             />{" "}
-            あり（なしの場合、運用・移行の必須WPは「対象外」にできます）
+            あり <span id="release-hint">（なしの場合、運用・移行の必須WPは「対象外」にできます）</span>
           </label>
         </div>
       </section>
 
       <section aria-labelledby="sec-objectives">
         <h2 id="sec-objectives">目的と成功指標</h2>
+        <SectionError error={error} section="objectives" />
         {state.objectives.length === 0 ? (
           <p>目的がまだありません。「目的を追加」から登録してください。WPは目的に紐付けないとベースラインを確定できません。</p>
         ) : (
@@ -118,7 +134,7 @@ export function ProposalPage({ state, run, newId, onGoToPlan }: Props) {
                       <input
                         aria-label={`${o.code}の${{ content: "目的・狙う効果", metricName: "成功指標", targetValue: "目標値", measurementTiming: "測定時期" }[field]}`}
                         value={o[field]}
-                        onChange={(e) => exec((s) => updateObjective(s, o.id, { [field]: e.target.value }))}
+                        onChange={(e) => exec("objectives", (s) => updateObjective(s, o.id, { [field]: e.target.value }))}
                       />
                     </td>
                   ))}
@@ -132,13 +148,14 @@ export function ProposalPage({ state, run, newId, onGoToPlan }: Props) {
             </tbody>
           </table>
         )}
-        <button type="button" onClick={() => exec((s) => addObjective(s, newId))}>
+        <button type="button" onClick={() => exec("objectives", (s) => addObjective(s, newId))}>
           目的を追加
         </button>
       </section>
 
       <section aria-labelledby="sec-members">
         <h2 id="sec-members">体制</h2>
+        <SectionError error={error} section="members" />
         {state.members.length === 0 ? (
           <p>メンバーがまだいません。「メンバーを追加」から登録してください。最初にPMを登録すると、監査ログの操作者になります。</p>
         ) : (
@@ -152,19 +169,19 @@ export function ProposalPage({ state, run, newId, onGoToPlan }: Props) {
               </tr>
             </thead>
             <tbody>
-              {state.members.map((m) => {
+              {state.members.map((m, index) => {
                 const role = state.projectMembers.find((p) => p.memberId === m.id)?.role ?? "member";
                 const blocker = memberRemovalBlocker(state, m.id);
                 return (
                   <tr key={m.id}>
                     <td>
-                      <input aria-label="氏名" value={m.name} onChange={(e) => exec((s) => updateMember(s, m.id, { name: e.target.value }))} />
+                      <input aria-label={`${index + 1}人目の氏名`} value={m.name} onChange={(e) => exec("members", (s) => updateMember(s, m.id, { name: e.target.value }))} />
                     </td>
                     <td>
                       <select
-                        aria-label={`${m.name || "メンバー"}の所属`}
+                        aria-label={`${m.name || `${index + 1}人目`}の所属`}
                         value={m.affiliation}
-                        onChange={(e) => exec((s) => updateMember(s, m.id, { affiliation: e.target.value as Affiliation }))}
+                        onChange={(e) => exec("members", (s) => updateMember(s, m.id, { affiliation: e.target.value as Affiliation }))}
                       >
                         {AFFILIATIONS.map((a) => (
                           <option key={a} value={a}>
@@ -175,9 +192,9 @@ export function ProposalPage({ state, run, newId, onGoToPlan }: Props) {
                     </td>
                     <td>
                       <select
-                        aria-label={`${m.name || "メンバー"}の役割`}
+                        aria-label={`${m.name || `${index + 1}人目`}の役割`}
                         value={role}
-                        onChange={(e) => exec((s) => changeRole(s, m.id, e.target.value as Role, new Date(), newId))}
+                        onChange={(e) => exec("members", (s) => changeRole(s, m.id, e.target.value as Role, new Date(), newId))}
                       >
                         {ROLES.map((r) => (
                           <option key={r} value={r}>
@@ -205,7 +222,7 @@ export function ProposalPage({ state, run, newId, onGoToPlan }: Props) {
         <p className="hint">役割の変更とメンバーの削除は、権限の変更として監査ログに残ります。</p>
         <button
           type="button"
-          onClick={() => exec((s) => addMember(s, s.projectMembers.some((p) => p.role === "pm") ? "member" : "pm", new Date(), newId))}
+          onClick={() => exec("members", (s) => addMember(s, s.projectMembers.some((p) => p.role === "pm") ? "member" : "pm", new Date(), newId))}
         >
           メンバーを追加
         </button>
@@ -229,7 +246,7 @@ export function ProposalPage({ state, run, newId, onGoToPlan }: Props) {
               type="button"
               className="button--danger"
               onClick={() => {
-                exec((s) => removeObjective(s, objectiveToRemove.id));
+                exec("objectives", (s) => removeObjective(s, objectiveToRemove.id, new Date(), newId));
                 setRemovingObjective(null);
               }}
             >
@@ -241,7 +258,11 @@ export function ProposalPage({ state, run, newId, onGoToPlan }: Props) {
 
       {memberToRemove && (
         <Modal title="メンバーを削除しますか" onClose={() => setRemovingMember(null)}>
-          <p>「{memberToRemove.name || "（氏名が未入力）"}」を体制から外します。権限の変更として監査ログに残ります。</p>
+          <p>
+            「{memberToRemove.name || "（氏名が未入力）"}」を体制から外します。権限の変更として監査ログに残ります。
+            {memberToRemove.id === state.project.pmMemberId &&
+              "このメンバーはPMです。外すとPMがいなくなり、以後の監査ログの操作者は「（PM未設定）」になります。"}
+          </p>
           <div className="modal__actions">
             <button type="button" autoFocus onClick={() => setRemovingMember(null)}>
               キャンセル
@@ -250,7 +271,7 @@ export function ProposalPage({ state, run, newId, onGoToPlan }: Props) {
               type="button"
               className="button--danger"
               onClick={() => {
-                exec((s) => removeMember(s, memberToRemove.id, new Date(), newId));
+                exec("members", (s) => removeMember(s, memberToRemove.id, new Date(), newId));
                 setRemovingMember(null);
               }}
             >

@@ -1,8 +1,9 @@
 // JSONの読み込み。現在のデータと並べて見せ、確定済みの記録を変える（置き換えになる）場合は確認を求める。
 // 置き換えは取り消せないので、先に現在のデータを書き出せるようにする
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { compareForImport, parseStateText, summarize, type ImportComparison, type StateSummary } from "../domain/persistence";
 import type { AppState } from "../domain/types";
+import { LIMITS } from "../domain/validate";
 import { formatDateTime } from "../labels";
 import { Modal } from "./Modal";
 
@@ -31,14 +32,25 @@ export function ImportDialog({ current, onImport, onExportCurrent, onClose }: Pr
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [exported, setExported] = useState(false);
+  // 読み込みの途中で別のファイルを選んだとき、古い結果で上書きしないための番号
+  const selection = useRef(0);
 
   const onFile = async (file: File | undefined) => {
+    const mine = ++selection.current;
     setLoaded(null);
     setConfirmed(false);
+    setErrors([]);
     if (!file) return;
+    // 大きすぎるファイルは読む前に断る（全体をメモリに読み込まないため）
+    if (file.size > LIMITS.maxBytes) {
+      setErrors([`ファイルが大きすぎます（上限 ${LIMITS.maxBytes / 1024 / 1024}MB）`]);
+      return;
+    }
     const result = parseStateText(await file.text());
+    if (mine !== selection.current) return;
     if (!result.ok) {
-      setErrors(result.errors.slice(0, 10));
+      const shown = result.errors.slice(0, 10);
+      setErrors(result.errors.length > shown.length ? [...shown, `ほか${result.errors.length - shown.length}件`] : shown);
       return;
     }
     setErrors([]);

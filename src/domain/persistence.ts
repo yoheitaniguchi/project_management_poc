@@ -244,6 +244,11 @@ export function frozenRecordChanges(current: AppState, next: AppState): string[]
   prefixOf("監査ログ", current.auditLogs, next.auditLogs);
   prefixOf("週次スナップショット", current.evmSnapshots, next.evmSnapshots);
 
+  // v1 の確定（＝G1+2承認）の後は、企画の承認の状態と承認日を変えない
+  if (current.baselines.length > 0 && (current.proposal.status !== next.proposal.status || current.proposal.approvedOn !== next.proposal.approvedOn)) {
+    reasons.push("G1+2承認の状態・承認日が現在のデータと違います");
+  }
+
   // 既存の版の明細は、増えも減りも変わりもしない（明細を足してよいのは新しい版だけ）
   for (const b of current.baselines) {
     const cur = current.baselineItems.filter((x) => x.baselineId === b.id).map(canonical).sort();

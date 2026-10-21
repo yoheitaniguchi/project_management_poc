@@ -15,6 +15,11 @@ export type Action =
    * 念のため、検証に通らない状態や、確定済みの記録を追記以外で変える状態は受け付けない
    */
   | { type: "commit"; next: AppState }
+  /**
+   * 画面の操作。ドメイン関数を reducer の時点の状態に当てて反映する（描画時の古い状態から作った結果で上書きしないため）。
+   * 結果は commit と同じ判定を通す
+   */
+  | { type: "apply"; op: (state: AppState) => { ok: true; state: AppState } | { ok: false; error: string } }
   | { type: "markExported"; at: Date }
   /** 「このブラウザの保存データを消去」と同時に、画面の状態も初期化する */
   | { type: "reset" };
@@ -38,6 +43,10 @@ export function reducer(state: AppState, action: Action): AppState {
       return acceptReplacement(state, action.state, action.allowReplace === true) ?? state;
     case "commit":
       return acceptCommit(state, action.next) ? action.next : state;
+    case "apply": {
+      const r = action.op(state);
+      return r.ok && acceptCommit(state, r.state) ? r.state : state;
+    }
     case "markExported":
       return { ...state, lastExportedAt: action.at.toISOString() };
     case "reset":

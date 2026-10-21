@@ -1,7 +1,7 @@
 // 保存に関する警告。一時的な通知ではなく、問題が続く間は画面の上部に出し続ける。
 import type { StorageStatus } from "../state/usePersistedState";
 
-export function StorageBanner({ status }: { status: StorageStatus }) {
+export function StorageBanner({ status, hasBackups }: { status: StorageStatus; hasBackups: boolean }) {
   const messages: string[] = [];
   if (status.unavailable) {
     messages.push(
@@ -12,6 +12,7 @@ export function StorageBanner({ status }: { status: StorageStatus }) {
     messages.push(
       "このブラウザに保存されていたデータを読めなかったため、自動保存を止めています。" +
         (status.corrupt.backupKey ? "元のデータは消さずに別の場所に退避しました。" : "") +
+        (hasBackups ? "退避したデータは、上部の「退避したデータを書き出す」で書き出せます。" : "") +
         "最後に書き出したJSONを読み込むと、自動保存を再開します。",
     );
   }

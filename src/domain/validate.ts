@@ -495,6 +495,24 @@ export function checkIntegrity(s: AppState): string[] {
   if (s.proposal.status === "approved" && s.proposal.approvedOn === null) {
     errors.push("proposal：承認済みなのに承認日がありません");
   }
+  // 承認＝v1の確定（CLAUDE.md 4章）。v1 がある ⇔ 企画が承認済み
+  const hasV1 = s.baselines.some((b) => b.version === 1);
+  if (hasV1 && s.proposal.status !== "approved") errors.push("proposal：ベースラインv1があるのに承認済みになっていません");
+  if (!hasV1 && s.proposal.status === "approved") errors.push("proposal：ベースラインが無いのに承認済みになっています");
+  // 体制：1人のメンバーに体制の記録は1件、PMは1名、プロジェクトのPMは役割がPMのメンバー
+  const roleOf = new Map<string, string>();
+  for (const pm of s.projectMembers) {
+    if (roleOf.has(pm.memberId)) errors.push(`projectMembers：メンバー「${pm.memberId}」の体制の記録が重複しています`);
+    roleOf.set(pm.memberId, pm.role);
+  }
+  s.members.forEach((m, i) => {
+    if (!roleOf.has(m.id)) errors.push(`members[${i}]：体制（役割）の記録がありません`);
+  });
+  const pms = s.projectMembers.filter((p) => p.role === "pm");
+  if (pms.length > 1) errors.push("projectMembers：PMが2名以上います");
+  if ((pms[0]?.memberId ?? null) !== s.project.pmMemberId) {
+    errors.push("project.pmMemberId：役割がPMのメンバーと一致しません");
+  }
   s.objectiveTraces.forEach((t, i) => {
     ref(`objectiveTraces[${i}].objectiveId`, t.objectiveId, objectiveIds, "目的");
     ref(`objectiveTraces[${i}].wbsNodeId`, t.wbsNodeId, nodeIds, "WBS要素");

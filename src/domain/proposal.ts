@@ -1,7 +1,7 @@
 // 企画・目的画面の操作（F01、CLAUDE.md 7.1）。状態を変える関数は、結果が validateState に通る状態だけを返す。
 // 4章のルールに反する操作は、状態を変えずに理由（日本語）を返す。
 import { appendAuditLog } from "./auditLog";
-import type { AppState, Member, Objective, Project, Proposal, Role } from "./types";
+import type { Affiliation, AppState, Member, Objective, Project, Proposal, Role, Route } from "./types";
 import { isValidDate, LIMITS } from "./validate";
 
 export type OpResult = { ok: true; state: AppState } | { ok: false; error: string };
@@ -17,25 +17,51 @@ export function operatorName(state: AppState): string {
 
 const tooLong = (...values: string[]) => values.some((v) => v.length > LIMITS.maxStringLength);
 
+/** 値が undefined の項目を取り除く（型をすり抜けた undefined で、検証に通らない状態を作らないため） */
+function defined<T extends object>(patch: T): Partial<T> {
+  return Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)) as Partial<T>;
+}
+
+const strings = (patch: object) => Object.values(patch).filter((v): v is string => typeof v === "string");
+const notString = (patch: object) => Object.values(patch).some((v) => typeof v !== "string");
+
+const ROUTES: readonly Route[] = ["normal", "simple"];
+const AFFILIATIONS: readonly Affiliation[] = ["internal", "vendor"];
+const ROLES: readonly Role[] = ["pm", "member", "supervisor", "viewer", "vendor"];
+
+/** 権限の変更の監査ログに残す、そのメンバーの情報（誰の権限かが監査ログだけで分かるように） */
+function memberSnapshot(state: AppState, memberId: string, role: Role | null) {
+  return { memberId, name: state.members.find((m) => m.id === memberId)?.name ?? "", role };
+}
+
 // ---------------------------------------------------------------- 企画・プロジェクト
 
 export type ProposalPatch = Partial<Pick<Proposal, "background" | "issues" | "estimatedHours">>;
 
-export function updateProposal(state: AppState, patch: ProposalPatch): OpResult {
-  if (tooLong(patch.background ?? "", patch.issues ?? "")) return fail("文字数が多すぎます");
+export function updateProposal(state: AppState, rawPatch: ProposalPatch): OpResult {
+  const patch = defined(rawPatch);
+  if (tooLong(...strings(patch))) return fail("文字数が多すぎます");
   if (patch.estimatedHours !== undefined && patch.estimatedHours !== null) {
     const h = patch.estimatedHours;
     if (!Number.isFinite(h) || h < 0 || h > LIMITS.maxHours * 10) {
       return fail(`想定工数は0〜${LIMITS.maxHours * 10}時間の数値で入力してください`);
     }
   }
+  if (patch.background !== undefined && typeof patch.background !== "string") return fail("背景の値が正しくありません");
+  if (patch.issues !== undefined && typeof patch.issues !== "string") return fail("課題の値が正しくありません");
   return ok({ ...state, proposal: { ...state.proposal, ...patch } });
 }
 
 export type ProjectPatch = Partial<Pick<Project, "name" | "scope" | "route" | "hasRelease">>;
 
-export function updateProject(state: AppState, patch: ProjectPatch): OpResult {
-  if (tooLong(patch.name ?? "", patch.scope ?? "")) return fail("文字数が多すぎます");
+export function updateProject(state: AppState, rawPatch: ProjectPatch): OpResult {
+  const patch = defined(rawPatch);
+  if (tooLong(...strings(patch))) return fail("文字数が多すぎます");
+  if (patch.route !== undefined && !ROUTES.includes(patch.route)) return fail("ルートの値が正しくありません");
+  if (patch.hasRelease !== undefined && typeof patch.hasRelease !== "boolean") return fail("リリースの有無の値が正しくありません");
+  if ((patch.name !== undefined && typeof patch.name !== "string") || (patch.scope !== undefined && typeof patch.scope !== "string")) {
+    return fail("値が正しくありません");
+  }
   return ok({ ...state, project: { ...state.project, ...patch } });
 }
 
@@ -61,9 +87,11 @@ export function addObjective(state: AppState, newId: () => string): OpResult {
 
 export type ObjectivePatch = Partial<Omit<Objective, "id" | "code">>;
 
-export function updateObjective(state: AppState, id: string, patch: ObjectivePatch): OpResult {
+export function updateObjective(state: AppState, id: string, rawPatch: ObjectivePatch): OpResult {
   if (!state.objectives.some((o) => o.id === id)) return fail("目的が見つかりません");
-  if (tooLong(...Object.values(patch))) return fail("文字数が多すぎます");
+  const patch = defined(rawPatch);
+  if (notString(patch)) return fail("値が正しくありません");
+  if (tooLong(...strings(patch))) return fail("文字数が多すぎます");
   return ok({ ...state, objectives: state.objectives.map((o) => (o.id === id ? { ...o, ...patch } : o)) });
 }
 
@@ -72,20 +100,40 @@ export function tracesOfObjective(state: AppState, id: string): number {
   return state.objectiveTraces.filter((t) => t.objectiveId === id).length;
 }
 
-/** 目的を削除する。紐付けも一緒に消す（紐付いていたWPは未紐付けに戻る） */
-export function removeObjective(state: AppState, id: string): OpResult {
-  if (!state.objectives.some((o) => o.id === id)) return fail("目的が見つかりません");
-  return ok({
+/**
+ * 目的を削除する。紐付けも一緒に消す（紐付いていたWPは未紐付けに戻る）。
+ * G1+2で合意した目的を後から消すこともあるため、監査ログに残す
+ */
+export function removeObjective(state: AppState, id: string, now: Date, newId: () => string): OpResult {
+  const objective = state.objectives.find((o) => o.id === id);
+  if (!objective) return fail("目的が見つかりません");
+  const next: AppState = {
     ...state,
     objectives: state.objectives.filter((o) => o.id !== id),
     objectiveTraces: state.objectiveTraces.filter((t) => t.objectiveId !== id),
-  });
+  };
+  return ok(
+    appendAuditLog(
+      next,
+      {
+        operator: operatorName(state),
+        targetType: "objective",
+        targetId: id,
+        action: "objective.remove",
+        before: { code: objective.code, content: objective.content, tracedWorkPackages: tracesOfObjective(state, id) },
+        after: null,
+      },
+      now,
+      newId,
+    ),
+  );
 }
 
 // ---------------------------------------------------------------- 体制（メンバーと役割）
 
 /** メンバーを体制に加える。役割の付与も権限の変更として監査ログに残す */
 export function addMember(state: AppState, role: Role, now: Date, newId: () => string): OpResult {
+  if (!ROLES.includes(role)) return fail("役割の値が正しくありません");
   if (role === "pm" && state.projectMembers.some((p) => p.role === "pm")) {
     return fail("PMは1名だけです。先に今のPMの役割を変えてください");
   }
@@ -100,7 +148,7 @@ export function addMember(state: AppState, role: Role, now: Date, newId: () => s
   return ok(
     appendAuditLog(
       next,
-      { operator: operatorName(state), targetType: "projectMember", targetId: projectMemberId, action: "role.assign", before: null, after: { role } },
+      { operator: operatorName(state), targetType: "projectMember", targetId: projectMemberId, action: "role.assign", before: null, after: { memberId: member.id, name: "", role } },
       now,
       newId,
     ),
@@ -109,8 +157,11 @@ export function addMember(state: AppState, role: Role, now: Date, newId: () => s
 
 export type MemberPatch = Partial<Pick<Member, "name" | "affiliation">>;
 
-export function updateMember(state: AppState, id: string, patch: MemberPatch): OpResult {
+export function updateMember(state: AppState, id: string, rawPatch: MemberPatch): OpResult {
   if (!state.members.some((m) => m.id === id)) return fail("メンバーが見つかりません");
+  const patch = defined(rawPatch);
+  if (patch.name !== undefined && typeof patch.name !== "string") return fail("氏名の値が正しくありません");
+  if (patch.affiliation !== undefined && !AFFILIATIONS.includes(patch.affiliation)) return fail("所属の値が正しくありません");
   if (tooLong(patch.name ?? "")) return fail("文字数が多すぎます");
   return ok({ ...state, members: state.members.map((m) => (m.id === id ? { ...m, ...patch } : m)) });
 }
@@ -120,6 +171,7 @@ export function updateMember(state: AppState, id: string, patch: MemberPatch): O
  * PMの役割を付けたメンバーをプロジェクトのPMにし、外したらPMを空にする
  */
 export function changeRole(state: AppState, memberId: string, role: Role, now: Date, newId: () => string): OpResult {
+  if (!ROLES.includes(role)) return fail("役割の値が正しくありません");
   const pm = state.projectMembers.find((p) => p.memberId === memberId);
   if (!pm) return fail("メンバーが見つかりません");
   if (pm.role === role) return ok(state);
@@ -137,7 +189,14 @@ export function changeRole(state: AppState, memberId: string, role: Role, now: D
   return ok(
     appendAuditLog(
       next,
-      { operator: operatorName(state), targetType: "projectMember", targetId: pm.id, action: "role.change", before: { role: pm.role }, after: { role } },
+      {
+        operator: operatorName(state),
+        targetType: "projectMember",
+        targetId: pm.id,
+        action: "role.change",
+        before: memberSnapshot(state, memberId, pm.role),
+        after: memberSnapshot(state, memberId, role),
+      },
       now,
       newId,
     ),
@@ -165,7 +224,7 @@ export function removeMember(state: AppState, memberId: string, now: Date, newId
   return ok(
     appendAuditLog(
       next,
-      { operator: operatorName(state), targetType: "projectMember", targetId: pm.id, action: "role.remove", before: { role: pm.role }, after: null },
+      { operator: operatorName(state), targetType: "projectMember", targetId: pm.id, action: "role.remove", before: memberSnapshot(state, memberId, pm.role), after: null },
       now,
       newId,
     ),
@@ -182,7 +241,9 @@ export interface ReturnInput {
 
 /**
  * G1+2の差戻しを記録する（CLAUDE.md 4章：差戻しは記録だけ残す）。
- * 承認はベースラインの確定と同じ操作で、計画画面で行う（PR-F）
+ * 承認はベースラインの確定と同じ操作で、計画画面で行う（PR-F）。
+ * v1 の確定（承認）の後に記録した差戻しは、改版に向けた差戻しとして記録だけ残し、
+ * 企画の承認の状態は変えない（承認＝v1の確定は取り消せないため）
  */
 export function recordGateReturn(state: AppState, input: ReturnInput, now: Date, newId: () => string): OpResult {
   if (input.reviewer.trim() === "") return fail("承認者（差戻しをした人）を入力してください");

@@ -7,5 +7,6 @@ export function downloadText(fileName: string, text: string, type = "application
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(url);
+  // ダウンロードが始まる前に解放すると失敗するブラウザがあるため、少し遅らせて解放する
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
