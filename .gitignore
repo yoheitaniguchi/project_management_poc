@@ -1,0 +1,19 @@
+# 依存関係・ビルド成果物
+node_modules/
+dist/
+coverage/
+test-results/
+
+# 秘密情報（値の入っていない見本だけはコミットする。CLAUDE.md 6.3）
+.env*
+!.env.example
+
+# PoCの実データ（CLAUDE.md 6.1 公開に関する注意）
+# アプリが書き出すJSON・CSVは、ファイル名の先頭が必ず「pmpoc-」になる
+pmpoc-*
+exports/
+
+# エディタ・OS
+.DS_Store
+.vscode/
+.idea/

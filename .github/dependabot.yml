@@ -1,0 +1,22 @@
+# 依存関係の更新提案（docs/security/checklist.md F）。開発者が1名のため、週1回・まとめて提案する。
+# DependabotのPRも通常のPRと同じくCIと人のレビューを経てマージする（自動マージはしない）。
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      github-actions:
+        patterns: ["*"]
