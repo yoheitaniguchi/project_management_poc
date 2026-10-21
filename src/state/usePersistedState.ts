@@ -4,7 +4,7 @@
 // - 他のタブで保存データが変わったら、このタブを読み取り専用にする（監査ログ等を失わないため）
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { shouldAutosave } from "../domain/autosave";
-import { clearStorage, loadFromStorage, saveToStorage, STORAGE_KEY, type LoadResult } from "../domain/persistence";
+import { clearStorage, listCorruptBackups, loadFromStorage, saveToStorage, STORAGE_KEY, type LoadResult } from "../domain/persistence";
 import { reducer, type Action } from "../domain/reducer";
 import { createInitialState, type AppState } from "../domain/types";
 
@@ -92,6 +92,16 @@ export function usePersistedState() {
     dispatchRaw({ type: "reset" });
   }, []);
 
+  /** 退避した壊れた保存データ（書き出して調べる用） */
+  const readCorruptBackups = useCallback((): { key: string; text: string }[] => {
+    const storage = getStorage();
+    if (!storage) return [];
+    return listCorruptBackups(storage).flatMap((key) => {
+      const text = storage.getItem(key);
+      return text === null ? [] : [{ key, text }];
+    });
+  }, []);
+
   const status: StorageStatus = {
     unavailable: initial.load === null,
     corrupt:
@@ -100,5 +110,5 @@ export function usePersistedState() {
     saveError,
     changedInOtherTab,
   };
-  return { state, dispatch, clearSavedData, status };
+  return { state, dispatch, clearSavedData, readCorruptBackups, status };
 }
