@@ -12,7 +12,8 @@ export default tseslint.config(
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     languageOptions: {
       ecmaVersion: 2022,
-      globals: { ...globals.browser, ...globals.node },
+      // アプリのコードはブラウザで動くので、Node.js の変数（process など）は使えない
+      globals: globals.browser,
     },
     plugins: {
       "react-hooks": reactHooks,
@@ -34,5 +35,10 @@ export default tseslint.config(
         },
       ],
     },
+  },
+  {
+    // 設定ファイルとテストは Node.js で動く
+    files: ["*.{ts,js}", "security/**/*.ts", "src/**/*.test.ts"],
+    languageOptions: { globals: { ...globals.browser, ...globals.node } },
   },
 );

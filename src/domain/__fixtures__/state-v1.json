@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "proposal": {
+    "background": "架空の案件（テスト用）。実在の組織・人物・数値ではない",
+    "issues": "テスト用の課題",
+    "estimatedHours": 10,
+    "status": "approved",
+    "approvedOn": "2030-01-07"
+  },
+  "project": {
+    "name": "テスト案件A",
+    "scope": "テスト用の範囲",
+    "route": "simple",
+    "hasRelease": false,
+    "status": "executing",
+    "pmMemberId": "m1"
+  },
+  "objectives": [
+    { "id": "o1", "code": "O1", "content": "テスト目的1", "metricName": "指標1", "targetValue": "100%", "measurementTiming": "終結時" }
+  ],
+  "objectiveTraces": [
+    { "id": "t1", "objectiveId": "o1", "wbsNodeId": "n2", "contribution": "テスト用の貢献" }
+  ],
+  "members": [
+    { "id": "m1", "name": "テスト太郎", "affiliation": "internal", "asanaUserGid": null }
+  ],
+  "projectMembers": [
+    { "id": "pm1", "memberId": "m1", "role": "pm" }
+  ],
+  "wbsNodes": [
+    { "id": "n1", "code": "1", "name": "テスト工程", "kind": "phase", "category": "functional", "parentId": null, "asanaTaskGid": null, "plannedStart": null, "plannedEnd": null, "completedOn": null, "excluded": false, "excludedReason": "" },
+    { "id": "n2", "code": "1.1", "name": "テスト作業", "kind": "work_package", "category": "functional", "parentId": "n1", "asanaTaskGid": null, "plannedStart": "2030-01-07", "plannedEnd": "2030-01-11", "completedOn": null, "excluded": false, "excludedReason": "" },
+    { "id": "n3", "code": "1.2", "name": "運用設計", "kind": "work_package", "category": "operation_transition", "parentId": "n1", "asanaTaskGid": null, "plannedStart": null, "plannedEnd": null, "completedOn": null, "excluded": true, "excludedReason": "本番リリースなし" }
+  ],
+  "estimates": [
+    { "id": "e1", "wbsNodeId": "n2", "hours": 10, "basis": "テスト用の根拠", "standardId": "s1" }
+  ],
+  "estimationStandards": [
+    { "id": "s1", "workType": "レビュー", "sizeUnit": "PR", "hoursPerUnit": 1, "version": "仮1", "provisional": true }
+  ],
+  "baselines": [
+    { "id": "b1", "version": 1, "approvedOn": "2030-01-07", "approver": "テスト太郎", "approverSelfDeclared": true, "gate": "G1+2", "comment": "テスト用", "revisionReason": null, "operatedAt": "2030-01-11T08:00:00.000Z" }
+  ],
+  "baselineItems": [
+    { "id": "bi1", "baselineId": "b1", "wbsNodeId": "n2", "plannedHours": 10, "plannedStart": "2030-01-07", "plannedEnd": "2030-01-11" }
+  ],
+  "gateReviews": [
+    { "id": "g1", "decision": "approved", "reviewedOn": "2030-01-07", "reviewer": "テスト太郎", "reviewerSelfDeclared": true, "comment": "テスト用", "baselineId": "b1", "operatedAt": "2030-01-11T08:00:00.000Z" }
+  ],
+  "timeEntries": [],
+  "evmSnapshots": [],
+  "syncRuns": [],
+  "auditLogs": [
+    { "id": "a1", "seq": 1, "at": "2030-01-11T08:00:00.000Z", "operator": "テスト太郎", "operatorSelfDeclared": true, "targetType": "baseline", "targetId": "b1", "action": "baseline.confirm", "before": null, "after": "{\"version\":1}" }
+  ],
+  "settings": { "alertThresholdPoints": 5, "holidays": [] },
+  "lastExportedAt": "2030-01-11T08:05:00.000Z"
+}
