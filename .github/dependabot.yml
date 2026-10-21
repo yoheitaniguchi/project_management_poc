@@ -11,6 +11,16 @@ updates:
     groups:
       npm-minor-and-patch:
         update-types: [minor, patch]
+    # PoCの間は react のメジャー更新（18 → 19）を提案しない。利点が無く、壊れる危険だけがあるため（人の判断。2026-10-21）
+    ignore:
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/react-dom"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
