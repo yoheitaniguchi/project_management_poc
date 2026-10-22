@@ -23,7 +23,7 @@ npm run preview        # 本番ビルドの動作確認
 ## CI と配信
 
 `.github/workflows/ci.yml` が、PRと `main` へのpushで lint・型チェック・単体テスト・依存の脆弱性検査・gitleaks・ビルドを行う。
-`main` へのpushでは、すべて成功したときだけ `gh-pages` ブランチへ配信する（GitHub Pages）。
+`main` へのpushでは、すべて成功したときだけ `gh-pages` ブランチへ配信する（GitHub Pages）。push で起動しなかったときは、Actions の CI から「Run workflow」で `main` を選んで実行すると配信できる。
 
 `.github/workflows/pr-preview.yml` が、PRごとのプレビューを `gh-pages` ブランチの `pr-preview/pr-<番号>/` に配信し、PRにURLをコメントする。PRを閉じると消す。
 プレビューのデータは本番と別の名前空間（`project_management_poc-pr-preview-<番号>:`）に保存し、本番の保存データは読み書きしない。

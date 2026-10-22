@@ -7,6 +7,8 @@ on:
   pull_request:
   push:
     branches: [main]
+  # 配信を手で起こすため（main への push で CI が起動しなかったときなど）。main で実行したときだけ配信する
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -70,7 +72,7 @@ jobs:
         run: sh scripts/check-dist.sh
       # 配信するのは、この（書き込み権限の無い）ジョブで作ったビルド成果物だけ
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         with:
           name: dist
           path: dist
@@ -80,7 +82,7 @@ jobs:
   # actions/deploy-pages はサイト全体を毎回置き換えるので共存できない）。
   # 書き込み権限を持つのはこのジョブだけで、npm は実行しない（依存パッケージのスクリプトに書き込みの権限を渡さない）
   deploy:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: [test, dependency-audit, secret-scan, build]
     runs-on: ubuntu-latest
     permissions:
