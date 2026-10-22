@@ -1,5 +1,6 @@
 // ドメインの型（CLAUDE.md 4章）。DBは使わず、ブラウザ内の状態として持つ。
 // 日付は "YYYY-MM-DD"、日時は ISO 8601（UTC、例 "2026-10-26T09:00:00.000Z"）の文字列で持つ。
+import { DEFAULT_ALERT_THRESHOLD_POINTS, DEFAULT_HOLIDAYS } from "../config/holidays";
 
 /** 状態全体のスキーマの版。型を変えたら上げ、persistence.ts に移行関数を足す */
 export const CURRENT_SCHEMA_VERSION = 2;
@@ -277,7 +278,7 @@ export function createInitialState(): AppState {
     evmSnapshots: [],
     syncRuns: [],
     auditLogs: [],
-    settings: { alertThresholdPoints: 5, holidays: [] },
+    settings: { alertThresholdPoints: DEFAULT_ALERT_THRESHOLD_POINTS, holidays: [...DEFAULT_HOLIDAYS] },
     lastExportedAt: null,
   };
 }
