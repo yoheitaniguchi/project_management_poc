@@ -2,7 +2,21 @@
 // 日付は "YYYY-MM-DD"、日時は ISO 8601（UTC、例 "2026-10-26T09:00:00.000Z"）の文字列で持つ。
 
 /** 状態全体のスキーマの版。型を変えたら上げ、persistence.ts に移行関数を足す */
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 2;
+
+/**
+ * WBSテンプレートの必須WP（CLAUDE.md 3.3）。見積漏れを防ぐため、テンプレートから展開したこれらのWPは削除できない
+ * （本番リリースが無い案件では「対象外」にして理由を残す）
+ */
+export const REQUIRED_WP_KEYS = [
+  "nfr_definition",
+  "threat_analysis",
+  "security_test",
+  "operation_design",
+  "migration_rehearsal",
+  "operation_handover",
+] as const;
+export type RequiredWpKey = (typeof REQUIRED_WP_KEYS)[number];
 
 export type Route = "normal" | "simple";
 export type ProjectStatus = "planning" | "executing" | "closed";
@@ -78,6 +92,8 @@ export interface WbsNode {
   completedOn: string | null;
   excluded: boolean;
   excludedReason: string;
+  /** テンプレートの必須WPなら、その種類（削除できない）。それ以外は null。版2で追加 */
+  requiredKey: RequiredWpKey | null;
 }
 
 export interface Estimate {

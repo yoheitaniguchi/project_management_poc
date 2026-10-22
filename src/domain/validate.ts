@@ -4,6 +4,7 @@
 // これは整合性の検証であり、意図的な改ざんは検知できない。
 import {
   CURRENT_SCHEMA_VERSION,
+  REQUIRED_WP_KEYS,
   type AppState,
   type AuditLog,
   type Baseline,
@@ -279,7 +280,7 @@ function readProjectMember(r: Reader, v: unknown, p: string): ProjectMember | nu
 function readWbsNode(r: Reader, v: unknown, p: string): WbsNode | null {
   const o = r.record(v, p, [
     "id", "code", "name", "kind", "category", "parentId", "asanaTaskGid",
-    "plannedStart", "plannedEnd", "completedOn", "excluded", "excludedReason",
+    "plannedStart", "plannedEnd", "completedOn", "excluded", "excludedReason", "requiredKey",
   ]);
   if (!o) return null;
   return {
@@ -295,6 +296,7 @@ function readWbsNode(r: Reader, v: unknown, p: string): WbsNode | null {
     completedOn: r.nullableDate(o, "completedOn", p),
     excluded: r.bool(o, "excluded", p),
     excludedReason: r.str(o, "excludedReason", p),
+    requiredKey: o.requiredKey === null ? null : r.oneOf(o, "requiredKey", p, REQUIRED_WP_KEYS),
   };
 }
 
@@ -552,6 +554,23 @@ export function checkIntegrity(s: AppState): string[] {
     ref(`timeEntries[${i}].memberId`, t.memberId, memberIds, "メンバー");
   });
   s.evmSnapshots.forEach((e, i) => ref(`evmSnapshots[${i}].baselineId`, e.baselineId, baselineIds, "ベースライン"));
+
+  // WBSコードは一意（実績のCSVはWBSコードでWPを指すため）。必須WPは種類ごとに1件、WPであること
+  const codes = new Set<string>();
+  const requiredKeys = new Set<string>();
+  s.wbsNodes.forEach((n, i) => {
+    if (n.code.trim() !== "" && codes.has(n.code)) errors.push(`wbsNodes[${i}]：WBSコード「${n.code}」が重複しています`);
+    codes.add(n.code);
+    if (n.requiredKey !== null) {
+      if (requiredKeys.has(n.requiredKey)) errors.push(`wbsNodes[${i}]：必須WP「${n.requiredKey}」が重複しています`);
+      requiredKeys.add(n.requiredKey);
+      if (n.kind !== "work_package") errors.push(`wbsNodes[${i}]：必須WPがWPではありません`);
+    }
+    if (n.excluded && n.excludedReason.trim() === "") errors.push(`wbsNodes[${i}]：対象外の理由がありません`);
+    if (n.parentId !== null && nodeById.get(n.parentId)?.kind === "work_package") {
+      errors.push(`wbsNodes[${i}]：WPの下に要素は置けません`);
+    }
+  });
 
   // WBSの親子の循環（訪問済みの集合で辿る）
   const parentOf = new Map(s.wbsNodes.map((n) => [n.id, n.parentId]));

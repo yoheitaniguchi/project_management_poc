@@ -4,6 +4,7 @@ import { useState } from "react";
 import { AppHeader } from "./components/AppHeader";
 import { ImportDialog } from "./components/ImportDialog";
 import { Modal } from "./components/Modal";
+import { PlanPage } from "./components/PlanPage";
 import { ProposalPage, type Run } from "./components/ProposalPage";
 import { StorageBanner } from "./components/StorageBanner";
 import { exportFileName, serializeState } from "./domain/persistence";
@@ -131,12 +132,7 @@ export default function App() {
 
       <main className="app">
         {tab === "proposal" && <ProposalPage state={state} run={run} newId={newId} onGoToPlan={() => setTab("plan")} onboarding={onboarding} />}
-        {tab === "plan" && (
-          <div className="page">
-            <h1 tabIndex={-1}>計画</h1>
-            <p>準備中です。WBS・目的の紐付け・見積と、G1+2承認によるベースラインの確定は、次の作業（PR-E・PR-F）で追加します。</p>
-          </div>
-        )}
+        {tab === "plan" && <PlanPage state={state} run={run} newId={newId} onGoToProposal={() => setTab("proposal")} />}
         {tab === "monitor" && (
           <div className="page">
             <h1 tabIndex={-1}>週次監視</h1>

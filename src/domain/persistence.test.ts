@@ -15,7 +15,7 @@ import {
 } from "./persistence";
 import { FakeStorage } from "./fakeStorage";
 import { fixtureText } from "./testState";
-import { createInitialState, type AppState } from "./types";
+import { createInitialState, CURRENT_SCHEMA_VERSION, type AppState } from "./types";
 
 const fixtureState = (): AppState => {
   const r = parseStateText(fixtureText());
@@ -61,7 +61,15 @@ describe("版の移行", () => {
   });
 
   it("今の版のデータはそのまま通す", () => {
-    expect(migrate({ schemaVersion: 1 })).toEqual({ ok: true, value: { schemaVersion: 1 } });
+    expect(migrate({ schemaVersion: CURRENT_SCHEMA_VERSION })).toEqual({ ok: true, value: { schemaVersion: CURRENT_SCHEMA_VERSION } });
+  });
+
+  it("版1 → 2：WBS要素に requiredKey: null を足す（1週目の形のJSONが読める）", () => {
+    const r = migrate({ schemaVersion: 1, wbsNodes: [{ id: "n1" }] });
+    expect(r).toEqual({ ok: true, value: { schemaVersion: 2, wbsNodes: [{ id: "n1", requiredKey: null }] } });
+    const parsed = parseStateText(fixtureText());
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) expect(parsed.state.wbsNodes.every((n) => n.requiredKey === null)).toBe(true);
   });
 
   it("移行の方法が無い版は、理由を付けて拒否する", () => {
@@ -75,7 +83,7 @@ describe("版の移行", () => {
   });
 
   it("新しい版のデータは、アプリの更新を促して拒否する", () => {
-    const result = migrate({ schemaVersion: 2 });
+    const result = migrate({ schemaVersion: CURRENT_SCHEMA_VERSION + 1 });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/新しい版/);
   });

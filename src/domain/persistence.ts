@@ -24,7 +24,18 @@ export type Migration = (raw: Record<string, unknown>) => Record<string, unknown
  * 型を変えて CURRENT_SCHEMA_VERSION を上げたら、ここに足す。移行の後で必ず検証する。
  * 移行関数は、必要な項目だけを新しいオブジェクトに詰め替える形で書く（スプレッドや Object.assign で丸ごと写さない）
  */
-const MIGRATIONS: Record<number, Migration> = {};
+const MIGRATIONS: Record<number, Migration> = {
+  // 版1 → 2：WBS要素に必須WPの種類（requiredKey）を追加した。既存の要素は必須WPとして扱わない（null）
+  1: (raw) => ({
+    ...raw,
+    schemaVersion: 2,
+    wbsNodes: Array.isArray(raw.wbsNodes)
+      ? raw.wbsNodes.map((n: unknown) =>
+          typeof n === "object" && n !== null && !Array.isArray(n) ? { ...(n as Record<string, unknown>), requiredKey: null } : n,
+        )
+      : raw.wbsNodes,
+  }),
+};
 
 export type MigrationResult = { ok: true; value: unknown } | { ok: false; error: string };
 
