@@ -77,7 +77,7 @@ describe("実績のCSVの取込（manual_csv）", () => {
     const first = importManualCsv(s0, "a.csv", csv(`2026-10-26,${code(s0, "設計")},1.5,a`), NOW, id).state;
     const r = importManualCsv(first, "a2.csv", csv(`2026-10-27,${code(s0, "設計")},1,new`, `2026-10-26,${code(s0, "設計")},2,a`), NOW, id);
     expect(r.result).toBe("failure");
-    expect(r.errors).toEqual([expect.stringMatching(/^3行目：取込済みの実績（1.5時間）と時間が違います/)]);
+    expect(r.errors).toEqual([expect.stringMatching(/^3行目：取込済みの実績（1.5時間）と時間が違います。取込済みの実績は直せないため/)]);
     expect(r.state.timeEntries).toEqual(first.timeEntries);
     expect(r.state.syncRuns.at(-1)).toMatchObject({ result: "failure", count: 0, error: expect.stringMatching(/3行目/) });
     expectValidState(r.state);
@@ -149,9 +149,62 @@ describe("実績のCSVの取込（manual_csv）", () => {
 
   it("誤りが多いときは、取込履歴のエラーを20件までにして件数を添える", () => {
     const { s: s0, id } = confirmed();
-    const lines = Array.from({ length: 30 }, (_, i) => `2026-10-2${i % 3},${code(s0, "設計")},0,${i}`);
+    const lines = Array.from({ length: 30 }, (_, i) => `2026-10-2${6 + (i % 3)},${code(s0, "設計")},0,${i}`);
     const r = importManualCsv(s0, "x.csv", csv(...lines), NOW, id);
     expect(r.errors).toHaveLength(30);
+    expect(r.errors.every((e) => e.includes("時間は0より大きく"))).toBe(true);
     expect(r.state.syncRuns.at(-1)?.error).toMatch(/（ほか10件）$/);
+  });
+
+  it("境界の値は受け付ける：0.25時間、24時間、1.50、500文字のメモ、作業日＝今日", () => {
+    const { s: s0, id } = confirmed();
+    const d = code(s0, "設計");
+    const r = importManualCsv(s0, "x.csv", csv(`2026-10-26,${d},0.25,a`, `2026-10-27,${d},24,b`, `2026-10-28,${d},1.50,c`, `2026-10-29,${d},1,${"あ".repeat(500)}`, `2026-10-30,${d},1,今日`), NOW, id);
+    expect(r).toMatchObject({ result: "success", added: 5 });
+    expect(r.state.timeEntries.map((t) => t.minutes)).toEqual([15, 1440, 90, 60, 60]);
+  });
+
+  it("誤りの行番号は、空の行や改行を含むメモがあってもファイル上の行と合う", () => {
+    const { s: s0, id } = confirmed();
+    const d = code(s0, "設計");
+    const text = `作業日,WBSコード,時間,メモ\n\n2026-10-26,${d},1,"二行の\nメモ"\n2026-10-26,${d},0,x\n`;
+    expect(importManualCsv(s0, "x.csv", text, NOW, id).errors).toEqual([expect.stringMatching(/^5行目：/)]);
+  });
+
+  it("1日の実績の合計は、取込済みを含めて24時間まで", () => {
+    const { s: s0, id } = confirmed();
+    const first = importManualCsv(s0, "a.csv", csv(`2026-10-26,${code(s0, "設計")},20,a`), NOW, id).state;
+    const r = importManualCsv(first, "b.csv", csv(`2026-10-26,${code(s0, "開発")},4,b`, `2026-10-26,${code(s0, "開発")},0.25,c`), NOW, id);
+    expect(r.errors).toEqual([expect.stringMatching(/^3行目：2026-10-26 の実績の合計が24時間を超えます/)]);
+  });
+
+  it("メモだけが違う取込済みの実績があれば、取り込んだうえで確かめてほしいことを示す", () => {
+    const { s: s0, id } = confirmed();
+    const first = importManualCsv(s0, "a.csv", csv(`2026-10-26,${code(s0, "設計")},2,打合せ`), NOW, id).state;
+    const r = importManualCsv(first, "b.csv", csv(`2026-10-26,${code(s0, "設計")},2,打合せ（資料）`), NOW, id);
+    expect(r).toMatchObject({ result: "success", added: 1, warnings: [expect.stringMatching(/^2行目：同じ作業日・WBSコードで、メモが違う/)] });
+  });
+
+  it("見出しが違うときは、Excel の保存形式（CSV UTF-8）を案内する", () => {
+    const { s: s0, id } = confirmed();
+    expect(importManualCsv(s0, "x.csv", "\u0093\u00fa,x,y,z\n", NOW, id).errors[0]).toMatch(/CSV UTF-8/);
+  });
+
+  it("取込の後に、実績のあるWPのWBSコードは変えられず、対象外にもできない（再取込を冪等に保つ）", () => {
+    const { s: s0, id } = confirmed();
+    const design = s0.wbsNodes.find((n) => n.name === "設計");
+    let s = okState(addWorkPackage(s0, design?.parentId ?? "", () => "added-wp"));
+    const added = s.wbsNodes.find((n) => n.id === "added-wp")?.code ?? "";
+    s = importManualCsv(s, "a.csv", csv(`2026-10-26,${code(s, "設計")},1,a`, `2026-10-26,${added},1,b`), NOW, id).state;
+    expect(updateNode(s, design?.id ?? "", { code: "2.9" })).toEqual({ ok: false, error: expect.stringMatching(/実績のあるWPのWBSコードは変えられません/) });
+    expect(setExcluded(s, "added-wp", true, "やめた")).toEqual({ ok: false, error: "実績のあるWPは、ここでは対象外にできません" });
+  });
+
+  it("取込済みの行は、その後に改版でWPを外しても、再取込で飛ばす", () => {
+    const { s: s0, id } = confirmed();
+    const file = csv(`2026-10-26,${code(s0, "開発")},1,a`);
+    let s = importManualCsv(s0, "a.csv", file, NOW, id).state;
+    s = okState(reviseBaseline(s, { approver: "監理者", approvedOn: "2026-10-27", comment: "", revisionReason: "開発を外す", exclusions: [{ wbsNodeId: s.wbsNodes.find((n) => n.name === "開発")?.id ?? "", reason: "範囲外" }] }, NOW, id));
+    expect(importManualCsv(s, "a.csv", file, NOW, id)).toMatchObject({ result: "success", added: 0, skipped: 1 });
   });
 });

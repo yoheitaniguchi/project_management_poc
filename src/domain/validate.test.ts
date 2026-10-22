@@ -253,6 +253,17 @@ describe("validateState：WBS・見積・紐付けの規則（版2）", () => {
     expect(errorsOf((r) => (list(r, "baselineItems")[0].plannedStart = "1000-01-01"))).toMatch(/計画日の年が範囲外/);
   });
 
+  it("取込で受け付けない実績は、読み込みでも拒否する", () => {
+    const entry = (over: Record<string, unknown>) => ({ id: "te1", wbsNodeId: "n2", memberId: "m1", workDate: "2030-01-08", minutes: 60, source: "manual_csv", uniqueKey: "manual_csv:2030-01-08:n2:a", ...over });
+    expect(errorsOf((r) => list(r, "timeEntries").push(entry({})))).toBe("");
+    expect(errorsOf((r) => list(r, "timeEntries").push(entry({ wbsNodeId: "n1", uniqueKey: "manual_csv:2030-01-08:n1:a" })))).toMatch(/phase に実績は付けられません/);
+    expect(errorsOf((r) => list(r, "timeEntries").push(entry({ wbsNodeId: "n3", uniqueKey: "manual_csv:2030-01-08:n3:a" })))).toMatch(/対象外のWPに実績は付けられません/);
+    expect(errorsOf((r) => list(r, "timeEntries").push(entry({ minutes: 0 })))).toMatch(/工数が0です/);
+    expect(errorsOf((r) => list(r, "timeEntries").push(entry({ workDate: "2030-01-06", uniqueKey: "manual_csv:2030-01-06:n2:a" })))).toMatch(/合意日より前/);
+    expect(errorsOf((r) => list(r, "timeEntries").push(entry({ memberId: null })))).toMatch(/メンバーがありません/);
+    expect(errorsOf((r) => list(r, "timeEntries").push(entry({ uniqueKey: "manual_csv:2030-01-09:n2:a" })))).toMatch(/一意キーが作業日・WBS要素と合いません/);
+  });
+
   it("要対応の閾値は整数のポイント", () => {
     expect(errorsOf((r) => ((r.settings as Record<string, unknown>).alertThresholdPoints = 5.5))).toMatch(/整数ではありません/);
   });

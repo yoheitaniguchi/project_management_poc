@@ -164,6 +164,9 @@ export function updateNode(state: AppState, id: string, rawPatch: NodePatch): Op
     patch.code = patch.code.trim();
     if (!WBS_CODE_PATTERN.test(patch.code)) return fail("WBSコードは英数字で始め、英数字・ピリオド・アンダースコア・ハイフンだけで、40文字以内にしてください");
     if (state.wbsNodes.some((n) => n.id !== id && n.code === patch.code)) return fail(`WBSコード「${patch.code}」はすでに使われています`);
+    if (patch.code !== node.code && state.timeEntries.some((t) => t.wbsNodeId === id)) {
+      return fail("実績のあるWPのWBSコードは変えられません（実績のCSVはWBSコードでWPを指すため）");
+    }
   }
   if (patch.name !== undefined && typeof patch.name !== "string") return fail("作業名の値が正しくありません");
   if (node.requiredKey !== null && patch.name !== undefined && patch.name.trim() === "") return fail("必須WPの作業名は空にできません");
@@ -192,6 +195,9 @@ export function setExcluded(state: AppState, id: string, excluded: boolean, reas
   const node = state.wbsNodes.find((n) => n.id === id);
   if (!node || !isWp(node)) return fail("WPが見つかりません");
   if (excluded && reason.trim() === "") return fail("対象外にする理由を入力してください");
+  if (excluded && state.timeEntries.some((t) => t.wbsNodeId === id) && !state.baselineItems.some((b) => b.wbsNodeId === id)) {
+    return fail("実績のあるWPは、ここでは対象外にできません");
+  }
   if (excluded && inLatestBaseline(state, id)) {
     return fail("最新のベースラインに含まれるWPのため、ここでは対象外にできません。改版するときに外してください");
   }

@@ -250,7 +250,7 @@ export function PlanPage({ state, run, newId, onGoToProposal }: Props) {
         onClearError={() => setError((e) => (e?.place === "baseline" ? null : e))}
       />
 
-      <ActualsImportPanel state={state} exec={(op) => exec("actuals", op)} newId={newId} error={<PlaceError error={error} place="actuals" />} />
+      <ActualsImportPanel state={state} exec={(op) => exec("actuals", op)} newId={newId} error={<PlaceError error={error} place="actuals" />} onGoToProposal={onGoToProposal} />
 
       {removingNode && (
         <RemoveDialog

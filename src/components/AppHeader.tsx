@@ -88,10 +88,10 @@ export function AppHeader({ state, now, onGoToProposal, onExport, onImport, onEx
             {lastSync ? (
               <span className={lastSync.result === "failure" ? "status--error" : undefined}>
                 {formatDateTime(lastSync.importedAt)} {SYNC_RESULT_LABELS[lastSync.result]}
-                {lastSync.result === "failure" && lastSync.error ? `（${lastSync.error}）` : ""}
+                {lastSync.result === "failure" ? "（計画画面の「実績工数の取込」で誤りを確かめてください）" : `（${lastSync.count}件）`}
               </span>
             ) : (
-              "未取込（実績の取込は2週目に追加します）"
+              "未取込（計画画面の「実績工数の取込」から取り込めます）"
             )}
           </dd>
         </div>
