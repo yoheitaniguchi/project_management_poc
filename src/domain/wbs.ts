@@ -198,6 +198,9 @@ export function setExcluded(state: AppState, id: string, excluded: boolean, reas
   if (excluded && state.timeEntries.some((t) => t.wbsNodeId === id) && !state.baselineItems.some((b) => b.wbsNodeId === id)) {
     return fail("実績のあるWPは、ここでは対象外にできません");
   }
+  if (excluded && node.completedOn !== null && !state.baselineItems.some((b) => b.wbsNodeId === id)) {
+    return fail("完了になっているWPは対象外にできません。先に完了を取り消してください");
+  }
   if (excluded && inLatestBaseline(state, id)) {
     return fail("最新のベースラインに含まれるWPのため、ここでは対象外にできません。改版するときに外してください");
   }

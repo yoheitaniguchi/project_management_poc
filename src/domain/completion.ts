@@ -27,7 +27,8 @@ export function setCompleted(state: AppState, wbsNodeId: string, completedOn: st
         targetId: wbsNodeId,
         action: "wbs.complete",
         before: { completedOn: node.completedOn },
-        after: { code: node.code, name: node.name, completedOn },
+        // 監査ログは長いと末尾から切り詰めるので、完了日を先頭に置く
+        after: { completedOn, code: node.code, name: node.name },
       },
       now,
       newId,
@@ -35,7 +36,10 @@ export function setCompleted(state: AppState, wbsNodeId: string, completedOn: st
   );
 }
 
-/** WPの完了を取り消す */
+/**
+ * WPの完了を取り消す。改版で外した（対象外になった）WPの完了日も取り消せる
+ * （完了にする操作は対象外のWPを拒否するが、記録を消す方向の操作は止めない）
+ */
 export function clearCompleted(state: AppState, wbsNodeId: string, now: Date, newId: () => string): OpResult {
   const node = state.wbsNodes.find((n) => n.id === wbsNodeId);
   if (!node || node.kind !== "work_package") return fail("WPが見つかりません");
@@ -49,7 +53,7 @@ export function clearCompleted(state: AppState, wbsNodeId: string, now: Date, ne
         targetType: "wbsNode",
         targetId: wbsNodeId,
         action: "wbs.uncomplete",
-        before: { code: node.code, name: node.name, completedOn: node.completedOn },
+        before: { completedOn: node.completedOn, code: node.code, name: node.name },
         after: { completedOn: null },
       },
       now,

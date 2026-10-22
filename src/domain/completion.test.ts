@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { clearCompleted, setCompleted } from "./completion";
 import { computeEvm, wpStatusAt } from "./evm";
-import { frozenRecordChanges } from "./persistence";
+import { frozenRecordChanges, parseStateText, serializeState } from "./persistence";
 import type { OpResult } from "./proposal";
 import { addMember, addObjective, updateMember } from "./proposal";
-import { confirmBaseline } from "./baseline";
+import { confirmBaseline, reviseBaseline } from "./baseline";
+import { importManualCsv } from "./timeImport";
 import { expectValidState } from "./testState";
 import { createInitialState, type AppState } from "./types";
-import { expandTemplate, setEstimate, setExcluded, setTrace, targetWorkPackages, updateNode } from "./wbs";
+import { addWorkPackage, expandTemplate, setEstimate, setExcluded, setTrace, targetWorkPackages, updateNode } from "./wbs";
 
 const ids = () => {
   let n = 0;
@@ -88,5 +89,74 @@ describe("WPの完了の手動設定（5章の一時変更）", () => {
     const phase = s.wbsNodes.find((n) => n.kind === "phase")?.id;
     const bad = { ...s, wbsNodes: s.wbsNodes.map((n) => (n.id === phase ? { ...n, completedOn: "2026-10-29" } : n)) };
     expect(() => expectValidState(bad)).toThrow();
+  });
+
+  it("完了の後・取り消しの後の状態を、JSONに書き出して読み込める", () => {
+    const { s: s0, id, wp } = confirmed();
+    for (const s of [okState(setCompleted(s0, wp, "2026-10-29", NOW, id)), okState(clearCompleted(okState(setCompleted(s0, wp, "2026-10-29", NOW, id)), wp, NOW, id))]) {
+      const parsed = parseStateText(serializeState(s));
+      expect(parsed.ok).toBe(true);
+      if (parsed.ok) expect(parsed.state).toEqual(s);
+    }
+  });
+
+  it("完了のWPは（どの版にも含まれていなければ）対象外にできない。改版で外したWPの完了日は残り、取り消せる", () => {
+    const { s: s0, id, wp } = confirmed();
+    const parent = s0.wbsNodes.find((n) => n.id === wp)?.parentId ?? "";
+    let s = okState(addWorkPackage(s0, parent, () => "new-wp"));
+    s = okState(setCompleted(s, "new-wp", "2026-10-29", NOW, id));
+    expect(setExcluded(s, "new-wp", true, "やめた")).toEqual({ ok: false, error: "完了になっているWPは対象外にできません。先に完了を取り消してください" });
+    // 版に含まれるWPを完了にしてから改版で外す
+    s = okState(setCompleted(s, wp, "2026-10-29", NOW, id));
+    s = okState(updateNode(s, "new-wp", { name: "追加", plannedStart: "2026-10-26", plannedEnd: "2026-10-30" }));
+    s = okState(setTrace(s, "new-wp", s.objectives[0].id, true, id));
+    s = okState(setEstimate(s, "new-wp", { hours: 1, basis: "" }, id));
+    s = okState(reviseBaseline(s, { approver: "監理者", approvedOn: "2026-10-27", comment: "", revisionReason: "設計を外す", exclusions: [{ wbsNodeId: wp, reason: "範囲外" }] }, NOW, id));
+    expect(s.wbsNodes.find((n) => n.id === wp)).toMatchObject({ excluded: true, completedOn: "2026-10-29" });
+    expect(okState(clearCompleted(s, wp, NOW, id)).wbsNodes.find((n) => n.id === wp)?.completedOn).toBeNull();
+  });
+
+  it("実績のあるWPは、完了で着手（50%）から完了（100%）に変わり、取り消すと50%に戻る", () => {
+    const { s: s0, id, wp } = confirmed();
+    const code = s0.wbsNodes.find((n) => n.id === wp)?.code ?? "";
+    const s1 = importManualCsv(s0, "a.csv", `作業日,WBSコード,時間,メモ\n2026-10-27,${code},2,`, NOW, id).state;
+    expect(computeEvm(s1, "2026-10-30")?.ev).toBe(4);
+    const s2 = okState(setCompleted(s1, wp, "2026-10-30", NOW, id));
+    expect(computeEvm(s2, "2026-10-30")?.ev).toBe(8);
+    expect(computeEvm(okState(clearCompleted(s2, wp, NOW, id)), "2026-10-30")?.ev).toBe(4);
+  });
+
+  it("完了日＝今日は受け付ける。日付をまたぐ直前の時刻でも今日で判定する", () => {
+    const { s, id, wp } = confirmed();
+    expect(setCompleted(s, wp, "2026-10-30", new Date(2026, 9, 30, 23, 59), id).ok).toBe(true);
+    expect(setCompleted(s, wp, "2026-10-31", new Date(2026, 9, 30, 23, 59), id).ok).toBe(false);
+  });
+
+  it("PMが未設定なら、操作者は「（PM未設定）」。取り消しの記録の後の値、phase・存在しないWPの取り消しの拒否", () => {
+    const { s: s0, id, wp } = confirmed();
+    const noPm = { ...s0, members: [], projectMembers: [], project: { ...s0.project, pmMemberId: null }, timeEntries: [] };
+    const s = okState(setCompleted(noPm, wp, "2026-10-29", NOW, id));
+    expect(s.auditLogs.at(-1)?.operator).toBe("（PM未設定）");
+    const cleared = okState(clearCompleted(s, wp, NOW, id));
+    expect(JSON.parse(cleared.auditLogs.at(-1)?.after ?? "{}")).toEqual({ completedOn: null });
+    const phase = s.wbsNodes.find((n) => n.kind === "phase")?.id ?? "";
+    expect(clearCompleted(s, phase, NOW, id).ok).toBe(false);
+    expect(clearCompleted(s, "nope", NOW, id).ok).toBe(false);
+  });
+
+  it("作業名が長くても、監査ログに完了日が残る", () => {
+    const { s: s0, id, wp } = confirmed();
+    const s1 = okState(updateNode(s0, wp, { name: "あ".repeat(3000) }));
+    const s = okState(setCompleted(s1, wp, "2026-10-29", NOW, id));
+    expect(s.auditLogs.at(-1)?.after).toMatch(/^\{"completedOn":"2026-10-29"/);
+  });
+
+  it("読み込み時の検証：完了日の年が範囲外、どの版にも含まれない対象外のWPの完了日を拒否する", () => {
+    const { s } = confirmed();
+    const wpOf = (pred: (n: AppState["wbsNodes"][number]) => boolean) => s.wbsNodes.find(pred)?.id;
+    const target = wpOf((n) => n.kind === "work_package" && !n.excluded);
+    expect(() => expectValidState({ ...s, wbsNodes: s.wbsNodes.map((n) => (n.id === target ? { ...n, completedOn: "1999-12-31" } : n)) })).toThrow();
+    const excluded = wpOf((n) => n.excluded);
+    expect(() => expectValidState({ ...s, wbsNodes: s.wbsNodes.map((n) => (n.id === excluded ? { ...n, completedOn: "2026-10-29" } : n)) })).toThrow();
   });
 });
