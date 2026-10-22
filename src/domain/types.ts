@@ -253,6 +253,11 @@ export interface AppState {
   lastExportedAt: string | null;
 }
 
+/** 最新の版（版番号が最大のもの）。まだ確定していなければ null（4章：予実差異は常に最新の承認済みベースラインを基準にする） */
+export function latestBaselineOf(baselines: readonly Baseline[]): Baseline | null {
+  return baselines.reduce<Baseline | null>((a, b) => (a === null || b.version > a.version ? b : a), null);
+}
+
 export function createInitialState(): AppState {
   return {
     schemaVersion: CURRENT_SCHEMA_VERSION,
