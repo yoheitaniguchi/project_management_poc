@@ -24,6 +24,7 @@ import {
 } from "../domain/wbs";
 import type { OpResult } from "../domain/proposal";
 import { CATEGORY_LABELS } from "../labels";
+import { ActualsImportPanel } from "./ActualsImportPanel";
 import { BaselinePanel } from "./BaselinePanel";
 import { Modal } from "./Modal";
 import type { Run } from "./ProposalPage";
@@ -47,7 +48,7 @@ const REQUIRED_WP_NAMES: Record<RequiredWpKey, string> = {
   operation_handover: "運用引継ぎ",
 };
 
-type ErrorPlace = "wbs" | "editor" | "baseline";
+type ErrorPlace = "wbs" | "editor" | "baseline" | "actuals";
 
 function PlaceError({ error, place }: { error: { place: ErrorPlace; message: string } | null; place: ErrorPlace }) {
   if (!error || error.place !== place) return null;
@@ -248,6 +249,8 @@ export function PlanPage({ state, run, newId, onGoToProposal }: Props) {
         error={<PlaceError error={error} place="baseline" />}
         onClearError={() => setError((e) => (e?.place === "baseline" ? null : e))}
       />
+
+      <ActualsImportPanel state={state} exec={(op) => exec("actuals", op)} newId={newId} error={<PlaceError error={error} place="actuals" />} onGoToProposal={onGoToProposal} />
 
       {removingNode && (
         <RemoveDialog

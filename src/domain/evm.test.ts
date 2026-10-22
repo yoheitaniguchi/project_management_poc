@@ -62,7 +62,7 @@ const entry = (s: AppState, wbsNodeId: string, workDate: string, minutes: number
   workDate,
   minutes,
   source: "manual_csv",
-  uniqueKey: `test:${seq}`,
+  uniqueKey: `manual_csv:${workDate}:${wbsNodeId}:テスト${seq}`,
 });
 
 /** 実績：A は 10/26 に 10時間、B は 10/29 に 2時間と 10/31（土）に 1時間。A は 10/30 に完了 */

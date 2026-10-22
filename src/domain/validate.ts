@@ -546,6 +546,8 @@ export function checkIntegrity(s: AppState): string[] {
   });
   const nodeById = new Map(s.wbsNodes.map((n) => [n.id, n]));
   const latestBaselineId = latestBaselineOf(s.baselines)?.id ?? null;
+  const everBaselined = new Set(s.baselineItems.map((x) => x.wbsNodeId));
+  const v1ApprovedOn = s.baselines.find((b) => b.version === 1)?.approvedOn ?? null;
   const versionOf = new Map(s.baselines.map((b) => [b.id, b.version]));
   const nodesOfVersion = (version: number) => {
     const b = s.baselines.find((x) => x.version === version);
@@ -595,6 +597,15 @@ export function checkIntegrity(s: AppState): string[] {
   });
   s.timeEntries.forEach((t, i) => {
     ref(`timeEntries[${i}].wbsNodeId`, t.wbsNodeId, nodeIds, "WBS要素");
+    const node = nodeById.get(t.wbsNodeId);
+    if (node?.kind === "phase") errors.push(`timeEntries[${i}]：phase に実績は付けられません`);
+    if (node?.excluded && !everBaselined.has(node.id)) errors.push(`timeEntries[${i}]：対象外のWPに実績は付けられません`);
+    if (t.minutes <= 0) errors.push(`timeEntries[${i}]：工数が0です`);
+    if (v1ApprovedOn !== null && t.workDate < v1ApprovedOn) errors.push(`timeEntries[${i}]：作業日がベースラインv1の合意日より前です`);
+    if (t.source === "manual_csv") {
+      if (t.memberId === null) errors.push(`timeEntries[${i}]：取り込んだ実績にメンバーがありません`);
+      if (!t.uniqueKey.startsWith(`manual_csv:${t.workDate}:${t.wbsNodeId}:`)) errors.push(`timeEntries[${i}]：一意キーが作業日・WBS要素と合いません`);
+    }
     ref(`timeEntries[${i}].memberId`, t.memberId, memberIds, "メンバー");
   });
   s.evmSnapshots.forEach((e, i) => ref(`evmSnapshots[${i}].baselineId`, e.baselineId, baselineIds, "ベースライン"));
