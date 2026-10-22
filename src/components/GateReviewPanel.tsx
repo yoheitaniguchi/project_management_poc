@@ -57,7 +57,7 @@ export function GateReviewPanel({ state, run, newId, onGoToPlan }: Props) {
         {latest === null ? "まだ承認されていません。" : `承認済み（ベースラインv${latest}まで確定）。`}
         承認はベースラインの確定と同じ操作です。{" "}
         <button type="button" className="link-button" onClick={onGoToPlan}>
-          計画画面で承認・確定する
+          {latest === null ? "計画画面の下部「ベースライン」で承認・確定する" : "計画画面の下部「ベースライン」で確認・改版する"}
         </button>
       </p>
 
@@ -69,7 +69,7 @@ export function GateReviewPanel({ state, run, newId, onGoToPlan }: Props) {
           <thead>
             <tr>
               <th scope="col">結果</th>
-              <th scope="col">日付</th>
+              <th scope="col">合意日・差戻し日</th>
               <th scope="col">承認者</th>
               <th scope="col">コメント</th>
               <th scope="col">記録した日時</th>

@@ -241,7 +241,13 @@ export function PlanPage({ state, run, newId, onGoToProposal }: Props) {
         />
       )}
 
-      <BaselinePanel state={state} exec={(op) => exec("baseline", op)} newId={newId} error={<PlaceError error={error} place="baseline" />} />
+      <BaselinePanel
+        state={state}
+        exec={(op) => exec("baseline", op)}
+        newId={newId}
+        error={<PlaceError error={error} place="baseline" />}
+        onClearError={() => setError((e) => (e?.place === "baseline" ? null : e))}
+      />
 
       {removingNode && (
         <RemoveDialog
@@ -379,6 +385,11 @@ function NodeEditor({ state, node, exec, error, newId, onAddWp, onRemove }: Edit
       {wp && (
         <>
           <h3>見積</h3>
+          {inBaseline && (
+            <p className="hint">
+              最新のベースラインに含まれるWPです。見積・計画日を変えても、改版するまで予実の基準（ベースライン）には反映されません。
+            </p>
+          )}
           <div className="form-grid">
             <label htmlFor="est-hours">見積工数（時間）</label>
             <input

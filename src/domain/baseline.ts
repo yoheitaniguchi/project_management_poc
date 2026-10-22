@@ -48,7 +48,7 @@ export const hasBlockers = (b: Blockers) => b.general.length > 0 || b.workPackag
 
 export function baselineBlockers(state: AppState): Blockers {
   const targets = targetWorkPackages(state);
-  const general = targets.length === 0 ? ["確定の対象になるWPがありません（WPが無いか、すべて対象外です）"] : [];
+  const general = targets.length === 0 ? ["確定の対象になるWPがありません（WPが無いか、すべて対象外です）。上のWBSで、テンプレートから展開するかWPを追加してください"] : [];
   const workPackages: WpBlocker[] = [];
   for (const node of targets) {
     const reasons: string[] = [];
@@ -234,6 +234,7 @@ export function reviseBaseline(state: AppState, input: RevisionInput, now: Date,
         after: {
           ...summaryOf(baseline, items),
           revisionReason: input.revisionReason,
+          comment: input.comment,
           excluded: input.exclusions.map((x) => ({ wbsNodeId: x.wbsNodeId, code: nodeOf(x.wbsNodeId)?.code ?? "", reason: x.reason })),
         },
       },
