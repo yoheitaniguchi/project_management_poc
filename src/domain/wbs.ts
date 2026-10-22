@@ -198,6 +198,9 @@ export function setExcluded(state: AppState, id: string, excluded: boolean, reas
   if (excluded && state.timeEntries.some((t) => t.wbsNodeId === id) && !state.baselineItems.some((b) => b.wbsNodeId === id)) {
     return fail("実績のあるWPは、ここでは対象外にできません");
   }
+  if (excluded && node.completedOn !== null && !state.baselineItems.some((b) => b.wbsNodeId === id)) {
+    return fail("完了になっているWPは対象外にできません。先に完了を取り消してください");
+  }
   if (excluded && inLatestBaseline(state, id)) {
     return fail("最新のベースラインに含まれるWPのため、ここでは対象外にできません。改版するときに外してください");
   }
@@ -248,6 +251,9 @@ export function removalImpact(state: AppState, id: string): RemovalImpact {
     blocker = "確定済みのベースラインに含まれるため削除できません";
   } else if (state.timeEntries.some((t) => ids.has(t.wbsNodeId))) {
     blocker = "実績工数が登録されているため削除できません";
+  } else if (nodes.some((n) => n.completedOn !== null)) {
+    // 完了の記録は監査ログに残っているので、要素だけを消して記録の行き先を失わないようにする
+    blocker = "完了になっているWPを含むため削除できません（先に完了を取り消してください）";
   }
   return {
     nodes: nodes.length,

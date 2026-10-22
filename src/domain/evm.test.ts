@@ -1,6 +1,7 @@
 // 5章の定義を、手で計算した例で確かめる（工数は時間）
 import { describe, expect, it } from "vitest";
 import { confirmBaseline, reviseBaseline } from "./baseline";
+import { setCompleted } from "./completion";
 import { computeEvm, gapPoints, indicators, isAlert, plannedValueOf, wpStatusAt } from "./evm";
 import type { OpResult } from "./proposal";
 import { addMember, addObjective, updateMember } from "./proposal";
@@ -68,9 +69,10 @@ const entry = (s: AppState, wbsNodeId: string, workDate: string, minutes: number
 /** 実績：A は 10/26 に 10時間、B は 10/29 に 2時間と 10/31（土）に 1時間。A は 10/30 に完了 */
 function withActuals() {
   const p = planned();
+  // 完了は画面と同じ操作で設定する（監査ログに残る）
+  const completed = okState(setCompleted(p.s, p.A, "2026-10-30", new Date(2026, 9, 30, 18, 0), p.id));
   const s: AppState = {
-    ...p.s,
-    wbsNodes: p.s.wbsNodes.map((n) => (n.id === p.A ? { ...n, completedOn: "2026-10-30" } : n)),
+    ...completed,
     timeEntries: [entry(p.s, p.A, "2026-10-26", 600), entry(p.s, p.B, "2026-10-29", 120), entry(p.s, p.B, "2026-10-31", 60)],
   };
   expectValidState(s);

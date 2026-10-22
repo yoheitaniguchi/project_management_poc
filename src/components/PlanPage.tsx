@@ -23,6 +23,8 @@ import {
   WBS_TEMPLATE,
 } from "../domain/wbs";
 import type { OpResult } from "../domain/proposal";
+import { localDate } from "../domain/calendar";
+import { clearCompleted, setCompleted } from "../domain/completion";
 import { CATEGORY_LABELS } from "../labels";
 import { ActualsImportPanel } from "./ActualsImportPanel";
 import { BaselinePanel } from "./BaselinePanel";
@@ -163,7 +165,7 @@ export function PlanPage({ state, run, newId, onGoToProposal }: Props) {
           </div>
         ) : (
           <table className="wbs-table">
-            <caption>WBS（目的に紐付かないWPは「状態」の列に「未紐付け」と表示します）</caption>
+            <caption>WBS（目的に紐付かないWPは「状態」の列に「未紐付け」と表示します。「完了」は手動で設定した完了日です）</caption>
             <thead>
               <tr>
                 <th scope="col">WBSコード</th>
@@ -198,7 +200,13 @@ export function PlanPage({ state, run, newId, onGoToProposal }: Props) {
                     <td>{wp ? objectiveCodes(node.id).join("、") || "—" : ""}</td>
                     <td>{wp ? (node.plannedStart ?? "未入力") : ""}</td>
                     <td>{wp ? (node.plannedEnd ?? "未入力") : ""}</td>
-                    <td className="wbs-status">{wp ? (node.excluded ? `対象外（${node.excludedReason}）` : unlinked ? "未紐付け" : "") : "フェーズ"}</td>
+                    <td className="wbs-status">
+                      {wp
+                        ? node.excluded
+                          ? `対象外（${node.excludedReason}）`
+                          : [unlinked ? "未紐付け" : "", node.completedOn ? `完了（${node.completedOn}）` : ""].filter(Boolean).join("・") || "—"
+                        : "フェーズ"}
+                    </td>
                     <td>
                       <button
                         type="button"
@@ -314,6 +322,13 @@ function NodeEditor({ state, node, exec, error, newId, onAddWp, onRemove }: Edit
   const [confirmingStandard, setConfirmingStandard] = useState(false);
   const impact = removalImpact(state, node.id);
   const inBaseline = inLatestBaseline(state, node.id);
+  const [completedOn, setCompletedOn] = useState(node.completedOn ?? localDate(new Date()));
+  const hasActuals = state.timeEntries.some((t) => t.wbsNodeId === node.id);
+  const completionRef = useRef<HTMLParagraphElement>(null);
+  // 完了にする・取り消すと押したボタンが無効になったり消えたりするので、結果の表示へフォーカスを移す
+  const runCompletion = (op: (s: AppState) => OpResult) => {
+    if (exec(op)) completionRef.current?.focus();
+  };
   const standard = state.estimationStandards.find((s) => s.id === standardId);
   const doApply = () => exec((s) => applyStandard(s, node.id, standardId, Number(quantity), newId));
   const result = standard ? standardResult(standard, Number(quantity)) : null;
@@ -476,10 +491,48 @@ function NodeEditor({ state, node, exec, error, newId, onAddWp, onRemove }: Edit
             </ul>
           )}
 
+          {!node.excluded && (
+            <>
+              <h3>完了</h3>
+              <p className="hint" id="complete-hint">
+                Asana の取込を入れるまでは、完了をここで設定します。完了日には実際に終わった日を入れてください（EVM では、完了日が基準日以前なら完了（100%）として数えます）。設定と取り消しは監査ログに残ります。
+                {node.completedOn !== null && "日付を変えると、完了日を変えられます。"}
+              </p>
+              {!hasActuals && <p className="hint">このWPには実績がありません。実績を取り込んでから完了にすると、CPI が正しく出ます。</p>}
+              <p ref={completionRef} tabIndex={-1} role="status">
+                {node.completedOn ? `完了（${node.completedOn}）` : "未完了"}
+              </p>
+              <div>
+                <label htmlFor="completed-on">完了日</label>{" "}
+                <input
+                  id="completed-on"
+                  type="date"
+                  max={localDate(new Date())}
+                  value={completedOn}
+                  aria-describedby="complete-hint"
+                  onChange={(e) => setCompletedOn(e.target.value)}
+                />{" "}
+                <button
+                  type="button"
+                  disabled={completedOn === "" || completedOn === node.completedOn}
+                  aria-describedby="complete-hint"
+                  onClick={() => runCompletion((s) => setCompleted(s, node.id, completedOn, new Date(), newId))}
+                >
+                  {node.completedOn ? "完了日を変える" : "完了にする"}
+                </button>{" "}
+                {node.completedOn && (
+                  <button type="button" onClick={() => runCompletion((s) => clearCompleted(s, node.id, new Date(), newId))}>
+                    完了を取り消す
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+
           <h3>対象外</h3>
           {node.excluded ? (
             <p>
-              対象外（理由：{node.excludedReason}）{" "}
+              対象外（理由：{node.excludedReason}）{node.completedOn ? `。完了日 ${node.completedOn} の記録があります` : ""}{" "}
               <button type="button" onClick={() => exec((s) => setExcluded(s, node.id, false, ""))}>
                 対象に戻す
               </button>

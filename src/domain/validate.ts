@@ -547,6 +547,8 @@ export function checkIntegrity(s: AppState): string[] {
   const nodeById = new Map(s.wbsNodes.map((n) => [n.id, n]));
   const latestBaselineId = latestBaselineOf(s.baselines)?.id ?? null;
   const everBaselined = new Set(s.baselineItems.map((x) => x.wbsNodeId));
+  const lastCompletionOf = new Map<string, AuditLog>();
+  for (const a of s.auditLogs) if (a.targetType === "wbsNode" && (a.action === "wbs.complete" || a.action === "wbs.uncomplete")) lastCompletionOf.set(a.targetId, a);
   const v1ApprovedOn = s.baselines.find((b) => b.version === 1)?.approvedOn ?? null;
   const versionOf = new Map(s.baselines.map((b) => [b.id, b.version]));
   const nodesOfVersion = (version: number) => {
@@ -625,6 +627,13 @@ export function checkIntegrity(s: AppState): string[] {
     }
     if (n.excluded && n.excludedReason.trim() === "") errors.push(`wbsNodes[${i}]：対象外の理由がありません`);
     if (n.requiredKey !== null && n.name.trim() === "") errors.push(`wbsNodes[${i}]：必須WPの作業名がありません`);
+    if (n.kind === "phase" && n.completedOn !== null) errors.push(`wbsNodes[${i}]：phase に完了日は付けられません`);
+    if (n.completedOn !== null && !isPlanDate(n.completedOn)) errors.push(`wbsNodes[${i}]：完了日の年が範囲外です`);
+    if (n.completedOn !== null && n.excluded && !everBaselined.has(n.id)) errors.push(`wbsNodes[${i}]：対象外のWPに完了日があります`);
+    // 完了日は、監査ログに残した最後の完了の操作と一致する（監査の記録なしに EV が変わらないように）
+    const lastCompletion = lastCompletionOf.get(n.id);
+    const loggedOn = lastCompletion?.action === "wbs.complete" ? (/^\{"completedOn":"(\d{4}-\d{2}-\d{2})"/.exec(lastCompletion.after ?? "")?.[1] ?? "?") : null;
+    if (n.completedOn !== loggedOn) errors.push(`wbsNodes[${i}]：完了日が監査ログの記録と合いません`);
     if (n.parentId !== null && nodeById.get(n.parentId)?.kind === "work_package") {
       errors.push(`wbsNodes[${i}]：WPの下に要素は置けません`);
     }
