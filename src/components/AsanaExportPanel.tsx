@@ -19,14 +19,30 @@ export function AsanaExportPanel({ state }: { state: AppState }) {
   return (
     <section aria-labelledby="sec-asana-export">
       <h2 id="sec-asana-export">Asana への書き出し（CSV）</h2>
-      <p className="hint" id="asana-export-hint">
-        対象のWP（対象外を除く）を、Asana の CSV インポートで読み込めるCSVに書き出します。列は Name（WBSコードと作業名）・Description（作業区分・紐付く目的・見積工数）・Start
-        Date・Due Date・Section（フェーズ名）です。Asana の取込画面で、列と項目の対応を選んでください。
-      </p>
-      <button type="button" disabled={count === 0} aria-describedby="asana-export-hint" onClick={exportCsv}>
+      <div className="hint" id="asana-export-hint">
+        <p>
+          今の計画画面の内容（ベースラインではありません）から、対象のWP（対象外を除く）を Asana の CSV
+          インポートで読み込めるCSVに書き出します。Asana の取込画面で、列を次の項目に対応させてください（日付は YYYY-MM-DD の形式です）。
+        </p>
+        <ul>
+          <li>Name → タスク名（WBSコードと作業名）</li>
+          <li>Description → 説明（作業区分・紐付く目的・見積工数）</li>
+          <li>Start Date → 開始日、Due Date → 期日</li>
+          <li>Section → セクション（フェーズ名）</li>
+        </ul>
+        <p>
+          注意：同じCSVを2回取り込むと、Asana にタスクが重複して作られます。タスク名の先頭のWBSコードは、実績を対応付けるために使うので Asana
+          で変えないでください。Excel で開くと文字化けすることがありますが、Asana への取込には影響しません。
+        </p>
+      </div>
+      <button type="button" disabled={count === 0} aria-describedby={count === 0 ? "asana-export-hint asana-export-empty" : "asana-export-hint"} onClick={exportCsv}>
         Asana 用のCSVを書き出す
       </button>
-      {count === 0 && <p className="hint">書き出す対象のWPがありません。</p>}
+      {count === 0 && (
+        <p className="hint" id="asana-export-empty">
+          書き出す対象のWPがありません。上の WBS の表で、テンプレートを展開するか、WPを追加してください。
+        </p>
+      )}
       {done && (
         <p className="message--info" role="status">
           {done}

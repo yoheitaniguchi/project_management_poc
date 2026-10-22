@@ -1,5 +1,5 @@
 // WPを Asana の CSV インポート用に書き出す（CLAUDE.md 6.2・8.2。Asana API へは通信しない）。
-// 列：Name（WBSコードと作業名）・Description（作業区分・紐付く目的・見積工数）・Start Date・Due Date・Section（フェーズ名）。
+// 列：Name（WBSコードと作業名）・Description（作業区分・紐付く目的・見積工数）・Start Date・Due Date・Section（フェーズ名。空ならフェーズのコード）。
 // 対象外のWPは書き出さない。列と Asana の項目の対応は、Asana の取込画面で選ぶ（4週目に実物で確かめる）
 import { CATEGORY_LABELS } from "../labels";
 import { toCsv } from "./csvWrite";
@@ -26,7 +26,7 @@ export function asanaImportRows(state: AppState): string[][] {
         `見積工数：${hours === undefined ? "未入力" : `${hours}時間`}`,
       ].join("\n");
       const phase = n.parentId === null ? undefined : nodeById.get(n.parentId);
-      return [`${n.code} ${n.name}`.trim(), description, n.plannedStart ?? "", n.plannedEnd ?? "", phase?.name ?? ""];
+      return [`${n.code} ${n.name}`.trim(), description, n.plannedStart ?? "", n.plannedEnd ?? "", phase === undefined ? "" : phase.name.trim() || phase.code];
     });
 }
 

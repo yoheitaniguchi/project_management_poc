@@ -64,4 +64,11 @@ describe("Asana の CSV インポート用の書き出し", () => {
     const parsed2 = parseCsv(asanaImportCsv(s2));
     expect(parsed2.ok && parsed2.rows.find((r) => r[0].startsWith("2.1"))?.[4]).toBe("'=1+1");
   });
+
+  it("フェーズ名が空なら、セクションにはフェーズのコードを書く（Asana でセクションが無名にならないように）", () => {
+    const { s: s0 } = planned();
+    const phase = s0.wbsNodes.find((n) => n.name === "設計・開発");
+    const s = okState(updateNode(s0, phase?.id ?? "", { name: "" }));
+    expect(asanaImportRows(s).find((r) => r[0].startsWith("2.1"))?.[4]).toBe(phase?.code);
+  });
 });
