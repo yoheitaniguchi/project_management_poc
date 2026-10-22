@@ -166,6 +166,16 @@ describe("改版（v2 以降）", () => {
     expect(frozenRecordChanges(s1, s)).toEqual([]);
   });
 
+  it("計画を変えていなくても、改版理由があれば新しい版を作れる（人間の判断）", () => {
+    const { s: s0, id } = confirmed();
+    const s = okState(reviseBaseline(s0, revision, NOW, id));
+    const [v1, v2] = [...s.baselines].sort((a, b) => a.version - b.version);
+    expect(v2.version).toBe(2);
+    expect(itemsOf(s, v2.id).map(({ wbsNodeId, plannedHours, plannedStart, plannedEnd }) => [wbsNodeId, plannedHours, plannedStart, plannedEnd])).toEqual(
+      itemsOf(s, v1.id).map(({ wbsNodeId, plannedHours, plannedStart, plannedEnd }) => [wbsNodeId, plannedHours, plannedStart, plannedEnd]),
+    );
+  });
+
   it("改版理由が無ければ改版しない。合意日は前の版より前にできない", () => {
     const { s, id } = confirmed();
     expect(reviseBaseline(s, { ...revision, revisionReason: " " }, NOW, id)).toEqual({ ok: false, error: "改版理由を入力してください" });

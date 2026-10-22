@@ -44,3 +44,38 @@ export function localDate(now: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
+
+/** 二分探索：昇順の配列で x 以上になる最初の位置 */
+function lowerBound(sorted: readonly string[], x: string): number {
+  let lo = 0;
+  let hi = sorted.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (sorted[mid] < x) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/**
+ * 営業日の数を数える関数を作る（日付を1日ずつ並べずに、算術と二分探索で数える）。
+ * 明細が多く期間が長くても計算が重くならないようにする。祝日の準備は1回だけ行う
+ */
+export function businessDayCounter(holidays: readonly string[]): (start: string, end: string) => number {
+  // 平日に当たる祝日だけを、重複を除いて昇順に並べる
+  const weekdayHolidays = [...new Set(holidays)].filter((d) => isBusinessDay(d, [])).sort();
+  return (start, end) => {
+    const s = toUtc(start);
+    const e = toUtc(end);
+    if (Number.isNaN(s) || Number.isNaN(e) || s > e) return 0;
+    const days = Math.round((e - s) / DAY_MS) + 1;
+    const startDow = new Date(s).getUTCDay();
+    let weekdays = Math.floor(days / 7) * 5;
+    for (let i = 0; i < days % 7; i++) {
+      const dow = (startDow + i) % 7;
+      if (dow !== 0 && dow !== 6) weekdays++;
+    }
+    const inRange = lowerBound(weekdayHolidays, fromUtc(e + DAY_MS)) - lowerBound(weekdayHolidays, start);
+    return weekdays - inRange;
+  };
+}

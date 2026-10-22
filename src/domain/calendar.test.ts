@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { businessDays, hasBusinessDay, isBusinessDay, localDate } from "./calendar";
+import { businessDayCounter, businessDays, hasBusinessDay, isBusinessDay, localDate } from "./calendar";
 
 describe("営業日（5章：土日と設定の祝日を除く）", () => {
   it("土日を除き、開始日と終了日の両方を含む", () => {
@@ -45,5 +45,16 @@ describe("営業日（5章：土日と設定の祝日を除く）", () => {
     expect(hasBusinessDay("2026-10-24", "2026-10-25", [])).toBe(false);
     expect(hasBusinessDay("2026-11-03", "2026-11-03", ["2026-11-03"])).toBe(false);
     expect(Date.now() - t).toBeLessThan(100);
+  });
+
+  it("営業日の数を算術で数えた結果は、1日ずつ並べた結果と一致する", () => {
+    const holidays = ["2026-11-03", "2026-11-23", "2026-11-28", "2026-11-03", "2027-01-01"];
+    const count = businessDayCounter(holidays);
+    const pairs: [string, string][] = [
+      ["2026-10-24", "2026-11-02"], ["2026-10-26", "2026-10-26"], ["2026-10-25", "2026-10-25"], ["2026-10-30", "2026-10-26"],
+      ["2026-11-01", "2026-11-30"], ["2026-12-25", "2027-01-08"], ["2028-02-26", "2028-03-02"], ["2026-01-01", "2027-12-31"],
+    ];
+    for (const [a, b] of pairs) expect(count(a, b), `${a}〜${b}`).toBe(businessDays(a, b, holidays).length);
+    expect(count("x", "2026-01-01")).toBe(0);
   });
 });
