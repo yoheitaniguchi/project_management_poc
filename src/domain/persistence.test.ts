@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { parsePreviewPr } from "../buildInfo";
 import { appendAuditLog } from "./auditLog";
 import {
   clearStorage,
@@ -11,6 +12,8 @@ import {
   saveToStorage,
   serializeState,
   STORAGE_KEY,
+  STORAGE_NAMESPACE,
+  storageNamespace,
   summarize,
 } from "./persistence";
 import { FakeStorage } from "./fakeStorage";
@@ -205,5 +208,26 @@ describe("読み込み時の比較（追記のみ）", () => {
     fewer.wbsNodes = fewer.wbsNodes.filter((n) => n.id !== "n3");
     const result = compareForImport(current, fewer);
     expect(result).toEqual({ kind: "replaces", reasons: ["WBS要素が1件少なくなります"] });
+  });
+});
+
+describe("PRプレビューの保存先（本番のデータと分ける）", () => {
+  it("本番は project_management_poc:、プレビューは本番の接頭辞にならない別の名前空間", () => {
+    expect(storageNamespace(null)).toBe("project_management_poc:");
+    const preview = storageNamespace(14);
+    expect(preview).toBe("project_management_poc-pr-preview-14:");
+    // 本番の「保存データを消去」（本番の名前空間で始まるキーを消す）で、プレビューの保存データを消さない。逆も同じ
+    expect(preview.startsWith(storageNamespace(null))).toBe(false);
+    expect(storageNamespace(null).startsWith(preview)).toBe(false);
+    expect(storageNamespace(1).startsWith(storageNamespace(14))).toBe(false);
+  });
+
+  it("PRの番号として正しい値だけを受け付ける", () => {
+    expect(parsePreviewPr("14")).toBe(14);
+    for (const v of [undefined, "", "0", "014", "-1", "1.5", "abc", "1e3", "12345678", 14]) expect(parsePreviewPr(v)).toBeNull();
+  });
+
+  it("テスト・本番のビルドでは本番の名前空間を使う", () => {
+    expect(STORAGE_NAMESPACE).toBe("project_management_poc:");
   });
 });

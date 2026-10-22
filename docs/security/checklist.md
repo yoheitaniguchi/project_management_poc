@@ -70,7 +70,9 @@
 ## F. CI・依存関係（CLAUDE.md 6.4）
 
 - CIでlint・型チェック・単体テスト・`@security`テスト・依存の脆弱性スキャン・gitleaksを実行している
-- 各ワークフローのトップレベルが`permissions: contents: read`。`pages: write`・`id-token: write`はGitHub Pagesへの配信ジョブだけ
+- 各ワークフローのトップレベルが`permissions: contents: read`。`contents: write`（`gh-pages`への配信）・`pull-requests: write`（PRプレビューのURLのコメント）は配信のジョブ（`deploy`・`preview`）だけ
+- 配信のジョブは`npm`を実行せず、書き込み権限の無いジョブで作ったビルド成果物を受け取るだけ。`actions/checkout`は`persist-credentials: false`
+- PRプレビューは、このリポジトリのブランチからのPRだけを対象にし、本番と別の名前空間（localStorage）に保存する
 - 配信はCIの成功を条件にしている。`concurrency`がある
 - トリガーに`pull_request_target`を使っていない
 - Actionはコミットsha固定。Dependabot（npm・github-actions）がある
@@ -79,7 +81,7 @@
 
 ## 人手で確認する項目（テスト不能）
 
-- GitHub Pagesの`github-pages`環境のデプロイ元が`main`に限られている
+- GitHub PagesのSourceが`gh-pages`ブランチになっている（`gh-pages`へ書き込むのは`main`の配信とPRプレビューのワークフローだけ）
 - `main`のRulesetでCIの成功が必須になっている
 - 操作者・承認者が自己申告であることが、評価レポートの課題（権限・監査）に記録されている
 

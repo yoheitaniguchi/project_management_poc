@@ -23,9 +23,12 @@ npm run preview        # 本番ビルドの動作確認
 ## CI と配信
 
 `.github/workflows/ci.yml` が、PRと `main` へのpushで lint・型チェック・単体テスト・依存の脆弱性検査・gitleaks・ビルドを行う。
-`main` へのpushでは、すべて成功したときだけ GitHub Pages へ配信する。
+`main` へのpushでは、すべて成功したときだけ `gh-pages` ブランチへ配信する（GitHub Pages）。
+
+`.github/workflows/pr-preview.yml` が、PRごとのプレビューを `gh-pages` ブランチの `pr-preview/pr-<番号>/` に配信し、PRにURLをコメントする。PRを閉じると消す。
+プレビューのデータは本番と別の名前空間（`project_management_poc-pr-preview-<番号>:`）に保存し、本番の保存データは読み書きしない。
+このリポジトリのブランチからのPRだけが対象で、Dependabot のPRにはプレビューを作らない。
 
 初回だけ、リポジトリの設定で次を行う。
-1. Settings → Pages → Build and deployment の Source を「GitHub Actions」にする
-2. Settings → Environments → `github-pages` → Deployment branches and tags を `main` だけにする
-3. Settings → Rules → Rulesets で `main` のルールを作り、CIのジョブ（test・dependency-audit・secret-scan・build）の成功を必須にする
+1. Settings → Pages → Build and deployment の Source を「Deploy from a branch」、ブランチを `gh-pages` / `(root)` にする（`gh-pages` は最初の配信で作られる）
+2. Settings → Rules → Rulesets で `main` のルールを作り、CIのジョブ（test・dependency-audit・secret-scan・build）の成功を必須にする

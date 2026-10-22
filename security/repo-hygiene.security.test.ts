@@ -71,14 +71,20 @@ describe("[@security] CIの権限（F）", () => {
       expect(unpinned).toEqual([]);
     });
 
-    it(`[@security] ${file}：書き込み権限は deploy ジョブだけ`, () => {
-      // ジョブ単位に分け、deploy 以外のジョブに write 権限が無いことを確かめる
+    it(`[@security] ${file}：書き込み権限は配信のジョブ（deploy・preview）だけで、そのジョブは npm を実行しない`, () => {
+      // ジョブ単位に分け、配信のジョブ以外に write 権限が無いことを確かめる。
+      // 配信のジョブはビルド済みの成果物を受け取るだけにし、依存パッケージのスクリプトに書き込みの権限を渡さない
       const jobsPart = text.split(/^jobs:\n/m)[1] ?? "";
       const jobs = jobsPart.split(/^ {2}(?=[a-z][\w-]*:\n)/m).filter(Boolean);
       for (const job of jobs) {
         const name = job.split(":")[0];
-        if (name !== "deploy") {
+        if (!["deploy", "preview"].includes(name)) {
           expect(job, `${name} ジョブに書き込み権限がある`).not.toMatch(/:\s*write/);
+        } else if (/:\s*write/.test(job)) {
+          expect(job, `${name} ジョブが書き込み権限を持ったまま npm を実行している`).not.toMatch(/\bnpm\b|\bnpx\b/);
+          const checkouts = job.match(/uses:\s*actions\/checkout@/g)?.length ?? 0;
+          const noCredentials = job.match(/persist-credentials: false/g)?.length ?? 0;
+          expect(noCredentials, `${name} ジョブで checkout が認証情報を残している`).toBeGreaterThanOrEqual(checkouts);
         }
       }
     });

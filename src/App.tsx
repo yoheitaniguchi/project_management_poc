@@ -1,6 +1,7 @@
 // 画面の本体。3画面の切り替えと、保存・読み込みの操作をまとめる。
 // 状態を変える処理は src/domain/ のドメイン関数に任せ、ここは reducer に渡すだけにする
 import { useEffect, useRef, useState } from "react";
+import { PREVIEW_PR } from "./buildInfo";
 import { AppHeader } from "./components/AppHeader";
 import { ImportDialog } from "./components/ImportDialog";
 import { Modal } from "./components/Modal";
@@ -100,6 +101,12 @@ export default function App() {
 
   return (
     <>
+      {PREVIEW_PR !== null && (
+        <p className="message--warn preview-banner" role="note">
+          PR #{PREVIEW_PR} のプレビューです（確認用）。データは本番のページとは別の場所に保存され、本番のデータは読み書きしません。
+          実際の運用には本番のページを使ってください。
+        </p>
+      )}
       <StorageBanner status={status} hasBackups={backups.length > 0} />
       <AppHeader
         state={state}
