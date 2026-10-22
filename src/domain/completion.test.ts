@@ -8,7 +8,7 @@ import { confirmBaseline, reviseBaseline } from "./baseline";
 import { importManualCsv } from "./timeImport";
 import { expectValidState } from "./testState";
 import { createInitialState, type AppState } from "./types";
-import { addWorkPackage, expandTemplate, setEstimate, setExcluded, setTrace, targetWorkPackages, updateNode } from "./wbs";
+import { addWorkPackage, expandTemplate, removalImpact, setEstimate, setExcluded, setTrace, targetWorkPackages, updateNode } from "./wbs";
 
 const ids = () => {
   let n = 0;
@@ -158,5 +158,27 @@ describe("WPの完了の手動設定（5章の一時変更）", () => {
     expect(() => expectValidState({ ...s, wbsNodes: s.wbsNodes.map((n) => (n.id === target ? { ...n, completedOn: "1999-12-31" } : n)) })).toThrow();
     const excluded = wpOf((n) => n.excluded);
     expect(() => expectValidState({ ...s, wbsNodes: s.wbsNodes.map((n) => (n.id === excluded ? { ...n, completedOn: "2026-10-29" } : n)) })).toThrow();
+  });
+
+  it("完了のWPは削除できない（完了の記録の行き先を失わないように）", () => {
+    const { s: s0, id, wp } = confirmed();
+    const parent = s0.wbsNodes.find((n) => n.id === wp)?.parentId ?? "";
+    let s = okState(addWorkPackage(s0, parent, () => "new-wp"));
+    s = okState(setCompleted(s, "new-wp", "2026-10-29", NOW, id));
+    expect(removalImpact(s, "new-wp").blocker).toMatch(/先に完了を取り消してください/);
+    s = okState(clearCompleted(s, "new-wp", NOW, id));
+    expect(removalImpact(s, "new-wp").blocker).toBeNull();
+  });
+
+  it("読み込み時の検証：完了日が監査ログの最後の完了の操作と合わないデータは拒否する", () => {
+    const { s: s0, id, wp } = confirmed();
+    const s = okState(setCompleted(s0, wp, "2026-10-29", NOW, id));
+    const withDate = (st: AppState, d: string | null) => ({ ...st, wbsNodes: st.wbsNodes.map((n) => (n.id === wp ? { ...n, completedOn: d } : n)) });
+    // 記録なしに完了日を付けた・書き換えた・消した
+    expect(() => expectValidState(withDate(s0, "2026-10-29"))).toThrow();
+    expect(() => expectValidState(withDate(s, "2026-10-28"))).toThrow();
+    expect(() => expectValidState(withDate(s, null))).toThrow();
+    // 取り消しの記録の後は、完了日が無いのが正しい
+    expectValidState(okState(clearCompleted(s, wp, NOW, id)));
   });
 });

@@ -251,6 +251,9 @@ export function removalImpact(state: AppState, id: string): RemovalImpact {
     blocker = "確定済みのベースラインに含まれるため削除できません";
   } else if (state.timeEntries.some((t) => ids.has(t.wbsNodeId))) {
     blocker = "実績工数が登録されているため削除できません";
+  } else if (nodes.some((n) => n.completedOn !== null)) {
+    // 完了の記録は監査ログに残っているので、要素だけを消して記録の行き先を失わないようにする
+    blocker = "完了になっているWPを含むため削除できません（先に完了を取り消してください）";
   }
   return {
     nodes: nodes.length,
