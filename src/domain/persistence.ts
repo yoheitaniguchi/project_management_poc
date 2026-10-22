@@ -3,7 +3,7 @@
 // - JSONファイルの書き出し・読み込み（毎週の正式な記録）
 // ここは純粋な関数と、注入された Storage だけを使う（画面やブラウザの API に直接依存しない）。
 import { CURRENT_SCHEMA_VERSION, type AppState } from "./types";
-import { findForbiddenKeys, LIMITS, validateState } from "./validate";
+import { findForbiddenKeys, LIMITS, STATE_KEYS, validateState } from "./validate";
 
 export const STORAGE_NAMESPACE = "project_management_poc:";
 export const STORAGE_KEY = `${STORAGE_NAMESPACE}v1:state`;
@@ -25,17 +25,38 @@ export type Migration = (raw: Record<string, unknown>) => Record<string, unknown
  * 移行関数は、必要な項目だけを新しいオブジェクトに詰め替える形で書く（スプレッドや Object.assign で丸ごと写さない）
  */
 const MIGRATIONS: Record<number, Migration> = {
-  // 版1 → 2：WBS要素に必須WPの種類（requiredKey）を追加した。既存の要素は必須WPとして扱わない（null）
-  1: (raw) => ({
-    ...raw,
-    schemaVersion: 2,
-    wbsNodes: Array.isArray(raw.wbsNodes)
-      ? raw.wbsNodes.map((n: unknown) =>
-          typeof n === "object" && n !== null && !Array.isArray(n) ? { ...(n as Record<string, unknown>), requiredKey: null } : n,
-        )
-      : raw.wbsNodes,
-  }),
+  // 版1 → 2：WBS要素に必須WPの種類（requiredKey）を追加した。既存の要素は必須WPとして扱わない（null）。
+  // 版1の画面にはWBSを作る操作が無かったため、版2で足した整合性の規則（WBSコードの形式・重複など）に反する版1のデータは、移行せずに拒否する
+  1: (raw) => {
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(raw)) {
+      if (!(STATE_KEYS as readonly string[]).includes(k)) throw new MigrationError(`版1のデータに知らない項目「${k}」があります`);
+      out[k] = raw[k];
+    }
+    out.schemaVersion = 2;
+    if (Array.isArray(raw.wbsNodes)) out.wbsNodes = raw.wbsNodes.map((n: unknown, i: number) => migrateV1WbsNode(n, i));
+    return out;
+  },
 };
+
+const V1_WBS_NODE_KEYS = [
+  "id", "code", "name", "kind", "category", "parentId", "asanaTaskGid",
+  "plannedStart", "plannedEnd", "completedOn", "excluded", "excludedReason",
+] as const;
+
+function migrateV1WbsNode(n: unknown, i: number): unknown {
+  if (typeof n !== "object" || n === null || Array.isArray(n)) return n; // 形式の誤りは移行の後の検証で拒否する
+  const src = n as Record<string, unknown>;
+  const unknownKey = Object.keys(src).find((k) => !(V1_WBS_NODE_KEYS as readonly string[]).includes(k));
+  if (unknownKey !== undefined) throw new MigrationError(`版1のwbsNodes[${i}]に知らない項目「${unknownKey}」があります`);
+  const out: Record<string, unknown> = {};
+  for (const k of V1_WBS_NODE_KEYS) if (k in src) out[k] = src[k];
+  out.requiredKey = null;
+  return out;
+}
+
+/** 移行できないデータ（版の前提に合わない）。migrate が理由として返す */
+export class MigrationError extends Error {}
 
 export type MigrationResult = { ok: true; value: unknown } | { ok: false; error: string };
 
@@ -59,7 +80,12 @@ export function migrate(
   while (version < targetVersion) {
     const step = migrations[version];
     if (!step) return { ok: false, error: `版${version}からの移行の方法がありません` };
-    current = step(current);
+    try {
+      current = step(current);
+    } catch (e) {
+      if (e instanceof MigrationError) return { ok: false, error: e.message };
+      throw e;
+    }
     const next = current.schemaVersion;
     // 移行関数は版を必ず1つ上げる（上げ忘れで無限ループにならないようにする）
     if (next !== version + 1) return { ok: false, error: `版${version}からの移行で版が正しく上がりませんでした` };

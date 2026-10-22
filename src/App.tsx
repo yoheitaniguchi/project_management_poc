@@ -1,6 +1,6 @@
 // 画面の本体。3画面の切り替えと、保存・読み込みの操作をまとめる。
 // 状態を変える処理は src/domain/ のドメイン関数に任せ、ここは reducer に渡すだけにする
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AppHeader } from "./components/AppHeader";
 import { ImportDialog } from "./components/ImportDialog";
 import { Modal } from "./components/Modal";
@@ -32,6 +32,15 @@ export default function App() {
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const readOnly = status.changedInOtherTab;
+  // 画面を切り替えたら、その画面の見出しへフォーカスを移す（押したボタンが消えてフォーカスが行方不明にならないように）
+  const firstRender = useRef(true);
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    document.querySelector<HTMLElement>("main h1")?.focus();
+  }, [tab]);
   const autosaveStopped = status.unavailable || (status.corrupt !== null && !status.recovered) || readOnly;
 
   /** 画面の操作を反映する。反映できなかったら理由を返す（成功と表示させない） */

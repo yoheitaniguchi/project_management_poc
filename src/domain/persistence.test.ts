@@ -50,7 +50,7 @@ describe("JSONの書き出しと読み込み", () => {
 });
 
 describe("版の移行", () => {
-  // 今は版1だけなので、移行先の版を引数で与えて仕組みを確かめる
+  // 移行の仕組みそのものを、架空の移行関数と移行先の版を引数で与えて確かめる（実際の版1→2の移行は下の別のテスト）
   const migrations = {
     1: (r: Record<string, unknown>) => ({ ...r, schemaVersion: 2, added: "v2" }),
     2: (r: Record<string, unknown>) => ({ ...r, schemaVersion: 3 }),
@@ -70,6 +70,19 @@ describe("版の移行", () => {
     const parsed = parseStateText(fixtureText());
     expect(parsed.ok).toBe(true);
     if (parsed.ok) expect(parsed.state.wbsNodes.every((n) => n.requiredKey === null)).toBe(true);
+  });
+
+  it("版1 → 2：知らない項目や、版1には無いはずの requiredKey があれば、上書きせずに拒否する", () => {
+    expect(migrate({ schemaVersion: 1, wbsNodes: [{ id: "n1", requiredKey: "threat_analysis" }] })).toEqual({
+      ok: false,
+      error: "版1のwbsNodes[0]に知らない項目「requiredKey」があります",
+    });
+    expect(migrate({ schemaVersion: 1, wbsNodes: [{ id: "n1", extra: 1 }] })).toMatchObject({ ok: false });
+    expect(migrate({ schemaVersion: 1, extra: 1 })).toEqual({ ok: false, error: "版1のデータに知らない項目「extra」があります" });
+    const text = JSON.parse(fixtureText()) as { wbsNodes: Record<string, unknown>[] };
+    text.wbsNodes[0].requiredKey = null;
+    const parsed = parseStateText(JSON.stringify(text));
+    expect(parsed.ok).toBe(false);
   });
 
   it("移行の方法が無い版は、理由を付けて拒否する", () => {

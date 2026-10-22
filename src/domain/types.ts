@@ -25,6 +25,22 @@ export type Affiliation = "internal" | "vendor";
 export type Role = "pm" | "member" | "supervisor" | "viewer" | "vendor";
 export type WbsKind = "phase" | "work_package";
 export type WorkCategory = "functional" | "non_functional_security" | "operation_transition";
+
+/** 必須WPごとの作業区分（CLAUDE.md 3.3）。必須WPの作業区分は変えられない */
+export const REQUIRED_WP_CATEGORY: Record<RequiredWpKey, WorkCategory> = {
+  nfr_definition: "non_functional_security",
+  threat_analysis: "non_functional_security",
+  security_test: "non_functional_security",
+  operation_design: "operation_transition",
+  migration_rehearsal: "operation_transition",
+  operation_handover: "operation_transition",
+};
+
+/**
+ * WBSコードの形式：英数字で始まり、英数字・ピリオド・アンダースコア・ハイフンだけ。
+ * 実績のCSVはWBSコードでWPを指すため、前後の空白や、CSVで数式と解釈される先頭文字（= + - @）を入れない
+ */
+export const WBS_CODE_PATTERN = /^[0-9A-Za-z][0-9A-Za-z._-]{0,39}$/;
 export type TimeEntrySource = "asana_csv" | "manual_csv";
 export type SyncResult = "success" | "failure";
 export type GateDecision = "approved" | "returned";

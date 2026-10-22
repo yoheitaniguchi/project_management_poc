@@ -1,7 +1,7 @@
 // 計画画面（CLAUDE.md 7.2）：WBSの表、目的に紐付かないWPの強調、見積合計・見積基準の適用件数・未紐付けの件数。
 // ベースラインの確定は次の作業（PR-F）で追加する
-import { useState } from "react";
-import type { AppState, WbsNode, WorkCategory } from "../domain/types";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { REQUIRED_WP_CATEGORY, type AppState, type RequiredWpKey, type WbsNode, type WorkCategory } from "../domain/types";
 import {
   addPhase,
   addWorkPackage,
@@ -12,9 +12,11 @@ import {
   planSummary,
   removalImpact,
   removeNode,
+  seedProvisionalStandards,
   setEstimate,
   setExcluded,
   setTrace,
+  standardResult,
   updateContribution,
   updateNode,
   WBS_TEMPLATE,
@@ -32,6 +34,27 @@ interface Props {
 }
 
 const CATEGORIES = Object.keys(CATEGORY_LABELS) as WorkCategory[];
+
+/** 必須WPの標準の名前（集計の警告で、欠けている必須WPを示すため） */
+const REQUIRED_WP_NAMES: Record<RequiredWpKey, string> = {
+  nfr_definition: "非機能要件の定義",
+  threat_analysis: "脅威分析",
+  security_test: "セキュリティテスト",
+  operation_design: "運用設計",
+  migration_rehearsal: "移行・リハーサル",
+  operation_handover: "運用引継ぎ",
+};
+
+type ErrorPlace = "wbs" | "editor";
+
+function PlaceError({ error, place }: { error: { place: ErrorPlace; message: string } | null; place: ErrorPlace }) {
+  if (!error || error.place !== place) return null;
+  return (
+    <p className="message--error" role="alert">
+      {error.message}
+    </p>
+  );
+}
 
 /** WBSを親子の順に並べる（親の後にその子をWBSコード順に） */
 function orderedNodes(state: AppState): { node: WbsNode; depth: number }[] {
@@ -52,9 +75,19 @@ function orderedNodes(state: AppState): { node: WbsNode; depth: number }[] {
 
 export function PlanPage({ state, run, newId, onGoToProposal }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ place: ErrorPlace; message: string } | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
-  const exec = (op: (s: AppState) => OpResult) => setError(run(op));
+  /** 操作を反映する。反映できなかったら、操作した場所の近くに理由を出す。成功したら true */
+  const exec = (place: ErrorPlace, op: (s: AppState) => OpResult): boolean => {
+    const message = run(op);
+    setError(message === null ? null : { place, message });
+    return message === null;
+  };
+  /** 要素を追加して、そのまま編集できるように選ぶ（追加する要素のIDを先に決めておく） */
+  const addAndSelect = (place: ErrorPlace, op: (s: AppState, idFor: () => string) => OpResult) => {
+    const id = newId();
+    if (exec(place, (s) => op(s, () => id))) setSelectedId(id);
+  };
 
   const summary = planSummary(state);
   const rows = orderedNodes(state);
@@ -92,6 +125,13 @@ export function PlanPage({ state, run, newId, onGoToProposal }: Props) {
             </dd>
           </div>
         </dl>
+        {rows.length > 0 && summary.missingRequiredKeys.length > 0 && (
+          <p className="message--warn">
+            テンプレートの必須WPのうち、次がWBSにありません：{summary.missingRequiredKeys.map((k) => REQUIRED_WP_NAMES[k]).join("・")}
+            。見積漏れを防ぐため、WPとして追加して、不要なら理由を書いて「対象外」にしてください（作業区分は
+            {[...new Set(summary.missingRequiredKeys.map((k) => CATEGORY_LABELS[REQUIRED_WP_CATEGORY[k]]))].join("・")}）。
+          </p>
+        )}
         {summary.unlinkedCount > 0 && (
           <p className="hint">目的に紐付かないWPがある間は、ベースラインを確定できません。表の「未紐付け」の行を選んで、目的に紐付けてください。</p>
         )}
@@ -105,32 +145,28 @@ export function PlanPage({ state, run, newId, onGoToProposal }: Props) {
           </button>
         </p>
       )}
-      {error && (
-        <p className="message--error" role="alert">
-          {error}
-        </p>
-      )}
-
       <section aria-labelledby="sec-wbs">
         <h2 id="sec-wbs">WBS</h2>
+        <PlaceError error={error} place="wbs" />
         {rows.length === 0 ? (
           <div>
             <p>
               WBSがまだありません。社内の標準テンプレート（版{WBS_TEMPLATE.version}）から展開してください。テンプレートには、見積漏れを防ぐための必須WP
               （非機能要件の定義・脅威分析・セキュリティテスト・運用設計・移行・リハーサル・運用引継ぎ）が含まれます。展開した後に、作業名の変更やWPの追加ができます。
             </p>
-            <button type="button" className="button--primary" onClick={() => exec((s) => expandTemplate(s, newId))}>
+            <button type="button" className="button--primary" onClick={() => exec("wbs", (s) => expandTemplate(s, newId))}>
               テンプレートから展開
             </button>
           </div>
         ) : (
           <table className="wbs-table">
+            <caption>WBS（目的に紐付かないWPは「状態」の列に「未紐付け」と表示します）</caption>
             <thead>
               <tr>
                 <th scope="col">WBSコード</th>
                 <th scope="col">作業名</th>
                 <th scope="col">作業区分</th>
-                <th scope="col">見積工数(h)</th>
+                <th scope="col">見積工数（時間）</th>
                 <th scope="col">紐付く目的</th>
                 <th scope="col">計画開始</th>
                 <th scope="col">計画終了</th>
@@ -159,9 +195,13 @@ export function PlanPage({ state, run, newId, onGoToProposal }: Props) {
                     <td>{wp ? objectiveCodes(node.id).join("、") || "—" : ""}</td>
                     <td>{wp ? (node.plannedStart ?? "未入力") : ""}</td>
                     <td>{wp ? (node.plannedEnd ?? "未入力") : ""}</td>
-                    <td>{wp ? (node.excluded ? `対象外（${node.excludedReason}）` : unlinked ? "未紐付け" : "") : "フェーズ"}</td>
+                    <td className="wbs-status">{wp ? (node.excluded ? `対象外（${node.excludedReason}）` : unlinked ? "未紐付け" : "") : "フェーズ"}</td>
                     <td>
-                      <button type="button" aria-pressed={node.id === selectedId} onClick={() => setSelectedId(node.id === selectedId ? null : node.id)}>
+                      <button
+                        type="button"
+                        aria-label={`${node.code} ${node.name || "（作業名が未入力）"}を${node.id === selectedId ? "閉じる" : "編集"}`}
+                        onClick={() => setSelectedId(node.id === selectedId ? null : node.id)}
+                      >
                         {node.id === selectedId ? "閉じる" : "編集"}
                       </button>
                     </td>
@@ -172,9 +212,17 @@ export function PlanPage({ state, run, newId, onGoToProposal }: Props) {
           </table>
         )}
         {rows.length > 0 && (
-          <button type="button" onClick={() => exec((s) => addPhase(s, newId))}>
+          <button type="button" onClick={() => addAndSelect("wbs", (s, idFor) => addPhase(s, idFor))}>
             フェーズを追加
           </button>
+        )}
+        {rows.length > 0 && state.estimationStandards.length === 0 && (
+          <p>
+            見積基準がありません。{" "}
+            <button type="button" onClick={() => exec("wbs", (s) => seedProvisionalStandards(s, newId))}>
+              仮の見積基準を入れる
+            </button>
+          </p>
         )}
       </section>
 
@@ -183,9 +231,10 @@ export function PlanPage({ state, run, newId, onGoToProposal }: Props) {
           key={selected.id}
           state={state}
           node={selected}
-          exec={exec}
+          exec={(op) => exec("editor", op)}
+          error={<PlaceError error={error} place="editor" />}
           newId={newId}
-          onAddWp={() => exec((s) => addWorkPackage(s, selected.id, newId))}
+          onAddWp={() => addAndSelect("editor", (s, idFor) => addWorkPackage(s, selected.id, idFor))}
           onRemove={() => setRemoving(selected.id)}
         />
       )}
@@ -193,7 +242,7 @@ export function PlanPage({ state, run, newId, onGoToProposal }: Props) {
       <section aria-labelledby="sec-baseline">
         <h2 id="sec-baseline">ベースライン</h2>
         {state.baselines.length === 0 ? (
-          <p>まだ確定していません。G1+2承認によるベースラインの確定は、次の作業（PR-F）で追加します。</p>
+          <p>まだ確定していません（G1+2承認によるベースラインの確定は準備中です）。</p>
         ) : (
           <ul>
             {[...state.baselines]
@@ -213,7 +262,7 @@ export function PlanPage({ state, run, newId, onGoToProposal }: Props) {
           node={removingNode}
           onClose={() => setRemoving(null)}
           onConfirm={() => {
-            exec((s) => removeNode(s, removingNode.id));
+            exec("wbs", (s) => removeNode(s, removingNode.id));
             setRemoving(null);
             setSelectedId(null);
           }}
@@ -226,7 +275,7 @@ export function PlanPage({ state, run, newId, onGoToProposal }: Props) {
 function RemoveDialog({ state, node, onClose, onConfirm }: { state: AppState; node: WbsNode; onClose: () => void; onConfirm: () => void }) {
   const impact = removalImpact(state, node.id);
   return (
-    <Modal title={`${node.code} ${node.name || ""} を削除しますか`} onClose={onClose}>
+    <Modal title={`${node.code} ${node.name || "（作業名が未入力）"}を削除しますか`} onClose={onClose}>
       {impact.blocker ? (
         <p>{impact.blocker}</p>
       ) : (
@@ -251,14 +300,15 @@ function RemoveDialog({ state, node, onClose, onConfirm }: { state: AppState; no
 interface EditorProps {
   state: AppState;
   node: WbsNode;
-  exec: (op: (s: AppState) => OpResult) => void;
+  exec: (op: (s: AppState) => OpResult) => boolean;
+  error: ReactNode;
   newId: () => string;
   onAddWp: () => void;
   onRemove: () => void;
 }
 
 /** 選んだ要素の編集。WPなら計画日・見積・目的の紐付け・対象外も編集できる */
-function NodeEditor({ state, node, exec, newId, onAddWp, onRemove }: EditorProps) {
+function NodeEditor({ state, node, exec, error, newId, onAddWp, onRemove }: EditorProps) {
   const wp = node.kind === "work_package";
   const estimate = state.estimates.find((e) => e.wbsNodeId === node.id);
   const [code, setCode] = useState(node.code);
@@ -267,14 +317,25 @@ function NodeEditor({ state, node, exec, newId, onAddWp, onRemove }: EditorProps
   const [quantity, setQuantity] = useState("1");
   const [confirmingStandard, setConfirmingStandard] = useState(false);
   const impact = removalImpact(state, node.id);
+  const inBaseline = state.baselineItems.some((b) => b.wbsNodeId === node.id);
   const standard = state.estimationStandards.find((s) => s.id === standardId);
   const doApply = () => exec((s) => applyStandard(s, node.id, standardId, Number(quantity), newId));
+  const result = standard ? standardResult(standard, Number(quantity)) : null;
+  // 今の見積が、適用した結果と違うなら（手入力の工数や根拠が消えるなら）確認する
+  const needsConfirm = estimate !== undefined && result !== null && (estimate.hours !== result.hours || estimate.basis !== result.basis);
+  // 開いたら（別の要素を選び直したら）見出しへフォーカスを移し、編集の場所を見せる
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    headingRef.current?.focus();
+    headingRef.current?.scrollIntoView?.({ block: "start" });
+  }, []);
 
   return (
     <section aria-labelledby="sec-editor" className="editor">
-      <h2 id="sec-editor">
-        {wp ? "WP" : "フェーズ"}の編集：{node.code} {node.name}
+      <h2 id="sec-editor" tabIndex={-1} ref={headingRef}>
+        {wp ? "WP" : "フェーズ"}の編集：{node.code} {node.name || "（作業名が未入力）"}
       </h2>
+      {error}
       <div className="form-grid">
         <label htmlFor="node-code">WBSコード</label>
         <span>
@@ -378,7 +439,7 @@ function NodeEditor({ state, node, exec, newId, onAddWp, onRemove }: EditorProps
                 数量 <input type="number" min={0} step={1} value={quantity} onChange={(e) => setQuantity(e.target.value)} style={{ width: "6em" }} />
                 {standard?.sizeUnit}
               </label>{" "}
-              <button type="button" onClick={() => (estimate && estimate.standardId === null ? setConfirmingStandard(true) : doApply())}>
+              <button type="button" onClick={() => (needsConfirm ? setConfirmingStandard(true) : doApply())}>
                 適用
               </button>
               {standard?.provisional && <p className="hint">この見積基準は仮の値です。PoCの結果を見て見直します。</p>}
@@ -424,16 +485,22 @@ function NodeEditor({ state, node, exec, newId, onAddWp, onRemove }: EditorProps
               <input id="exclude-reason" value={excludeReason} onChange={(e) => setExcludeReason(e.target.value)} placeholder="例：本番リリースなし" />{" "}
               <button
                 type="button"
-                disabled={excludeReason.trim() === ""}
-                aria-describedby={excludeReason.trim() === "" ? "exclude-hint" : undefined}
+                disabled={excludeReason.trim() === "" || inBaseline}
+                aria-describedby={excludeReason.trim() === "" || inBaseline ? "exclude-hint" : undefined}
                 onClick={() => exec((s) => setExcluded(s, node.id, true, excludeReason))}
               >
                 対象外にする
               </button>
-              {excludeReason.trim() === "" && (
+              {inBaseline ? (
                 <span id="exclude-hint" className="hint">
-                  理由を入力すると対象外にできます。対象外のWPは見積・紐付け・ベースラインの対象から外れます。
+                  確定済みのベースラインに含まれるWPのため、対象外にできません。
                 </span>
+              ) : (
+                excludeReason.trim() === "" && (
+                  <span id="exclude-hint" className="hint">
+                    理由を入力すると対象外にできます。対象外のWPは見積・紐付け・ベースラインの対象から外れます。
+                  </span>
+                )
               )}
             </div>
           )}
@@ -463,10 +530,10 @@ function NodeEditor({ state, node, exec, newId, onAddWp, onRemove }: EditorProps
       </div>
 
       {confirmingStandard && (
-        <Modal title="手で入れた見積を置き換えますか" onClose={() => setConfirmingStandard(false)}>
+        <Modal title="今の見積を置き換えますか" onClose={() => setConfirmingStandard(false)}>
           <p>
-            今の見積工数 {estimate?.hours}時間（手入力）を、見積基準「{standard?.workType}」× {quantity}
-            {standard?.sizeUnit}＝ {standard ? Math.round(standard.hoursPerUnit * Number(quantity) * 100) / 100 : ""}時間に置き換えます。
+            見積工数 {estimate?.hours}時間 を {result?.hours}時間 に、見積根拠「{estimate?.basis || "（未入力）"}」を「{result?.basis}」に置き換えます。
+            手で書いた見積根拠は残りません。
           </p>
           <div className="modal__actions">
             <button type="button" autoFocus onClick={() => setConfirmingStandard(false)}>

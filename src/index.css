@@ -250,7 +250,7 @@ td {
   background: #fff8c5;
 }
 
-.wbs-row--unlinked td:nth-child(8) {
+.wbs-row--unlinked .wbs-status {
   color: #82071e;
   font-weight: bold;
 }

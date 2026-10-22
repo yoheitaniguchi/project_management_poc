@@ -138,3 +138,60 @@ describe("isValidDate", () => {
     expect(isValidDate(s)).toBe(expected);
   });
 });
+
+describe("validateState：WBS・見積・紐付けの規則（版2）", () => {
+  const errorsOf = (mutate: (raw: Record<string, unknown>) => void) => {
+    const raw = fixtureRaw();
+    mutate(raw);
+    const result = validateState(raw);
+    return result.ok ? "" : result.errors.join("\n");
+  };
+  const list = (raw: Record<string, unknown>, key: string) => raw[key] as Record<string, unknown>[];
+  const node = (raw: Record<string, unknown>, id: string) => {
+    const n = list(raw, "wbsNodes").find((x) => x.id === id);
+    if (!n) throw new Error(id);
+    return n;
+  };
+
+  it("WBSコードの重複を拒否する", () => {
+    expect(errorsOf((r) => (node(r, "n3").code = "1.1"))).toMatch(/WBSコード「1.1」が重複/);
+  });
+
+  it.each(["", " 1.1", "1.1 ", "=1+1", "+1", "-1", "@x", "1\n2", "a".repeat(41)])("WBSコードの形式の誤りを拒否する（%j）", (code) => {
+    expect(errorsOf((r) => (node(r, "n2").code = code))).toMatch(/WBSコードの形式/);
+  });
+
+  it("必須WPの重複・phase への付与・知らない値・作業区分の誤りを拒否する", () => {
+    const withKeys = (r: Record<string, unknown>) => {
+      node(r, "n3").requiredKey = "operation_design";
+    };
+    expect(errorsOf(withKeys)).toBe("");
+    expect(
+      errorsOf((r) => {
+        withKeys(r);
+        node(r, "n2").category = "operation_transition";
+        node(r, "n2").requiredKey = "operation_design";
+      }),
+    ).toMatch(/必須WP「operation_design」が重複/);
+    expect(errorsOf((r) => (node(r, "n1").requiredKey = "threat_analysis"))).toMatch(/必須WPがWPではありません/);
+    expect(errorsOf((r) => (node(r, "n3").requiredKey = "unknown_key"))).not.toBe("");
+    expect(errorsOf((r) => (node(r, "n2").requiredKey = "threat_analysis"))).toMatch(/必須WPの作業区分/);
+  });
+
+  it("対象外なのに理由が空、WPの下の要素を拒否する", () => {
+    expect(errorsOf((r) => (node(r, "n3").excludedReason = " "))).toMatch(/対象外の理由がありません/);
+    expect(errorsOf((r) => (node(r, "n3").parentId = "n2"))).toMatch(/WPの下に要素は置けません/);
+  });
+
+  it("見積の重複・phase への見積を拒否する", () => {
+    expect(errorsOf((r) => list(r, "estimates").push({ ...list(r, "estimates")[0], id: "e2" }))).toMatch(/見積が重複/);
+    expect(errorsOf((r) => list(r, "estimates").push({ ...list(r, "estimates")[0], id: "e2", wbsNodeId: "n1" }))).toMatch(/phase に見積/);
+  });
+
+  it("紐付けの重複・phase への紐付けを拒否する", () => {
+    expect(errorsOf((r) => list(r, "objectiveTraces").push({ ...list(r, "objectiveTraces")[0], id: "t2" }))).toMatch(/紐付けが重複/);
+    expect(errorsOf((r) => list(r, "objectiveTraces").push({ ...list(r, "objectiveTraces")[0], id: "t2", wbsNodeId: "n1" }))).toMatch(
+      /phase は目的に紐付けられません/,
+    );
+  });
+});

@@ -14,6 +14,7 @@ import {
   planSummary,
   removalImpact,
   removeNode,
+  seedProvisionalStandards,
   setEstimate,
   setExcluded,
   setTrace,
@@ -118,6 +119,50 @@ describe("要素の追加・編集・削除", () => {
   });
 });
 
+describe("要素の編集の守り", () => {
+  it("確定済みのベースラインに含まれるWPは、理由を付けて対象外にできない", () => {
+    const r = validateState(fixtureRaw());
+    if (!r.ok) throw new Error(r.errors.join());
+    expect(setExcluded(r.state, "n2", true, "不要になった")).toEqual({
+      ok: false,
+      error: "確定済みのベースラインに含まれるWPのため、対象外にできません",
+    });
+  });
+
+  it("変えてよい項目以外は、渡されても変えない", () => {
+    const { s: s0 } = expanded();
+    const req = s0.wbsNodes.find((n) => n.requiredKey === "threat_analysis");
+    if (!req) throw new Error("必須WPがありません");
+    const patch = { name: "脅威分析（改）", requiredKey: null, kind: "phase", excluded: true, id: "x" } as unknown as Parameters<typeof updateNode>[2];
+    const s = okState(updateNode(s0, req.id, patch));
+    expect(s.wbsNodes.find((n) => n.id === req.id)).toEqual({ ...req, name: "脅威分析（改）" });
+  });
+
+  it("WBSコードは前後の空白を除いて保存し、形式に合わないコードは拒否する", () => {
+    const { s: s0 } = expanded();
+    const wp = wpByName(s0, "設計");
+    const s = okState(updateNode(s0, wp.id, { code: " 2.9 " }));
+    expect(s.wbsNodes.find((n) => n.id === wp.id)?.code).toBe("2.9");
+    for (const code of ["=1+1", "@x", "-1", "1 2"]) expect(updateNode(s0, wp.id, { code }).ok).toBe(false);
+  });
+
+  it("欠けている必須WPを集計で示す（テンプレートを使わずに作ったWBS）", () => {
+    const id = ids();
+    let s = okState(addPhase(createInitialState(), id));
+    expect(planSummary(s).missingRequiredKeys).toEqual([...REQUIRED_WP_KEYS]);
+    s = expanded().s;
+    expect(planSummary(s).missingRequiredKeys).toEqual([]);
+  });
+
+  it("見積基準が無ければ、展開しなくても仮の見積基準を入れられる（既にあれば変えない）", () => {
+    const id = ids();
+    const s = okState(seedProvisionalStandards(createInitialState(), id));
+    expect(s.estimationStandards.length).toBeGreaterThan(0);
+    expect(s.estimationStandards.every((x) => x.provisional)).toBe(true);
+    expect(okState(seedProvisionalStandards(s, id)).estimationStandards).toEqual(s.estimationStandards);
+  });
+});
+
 describe("目的の紐付け（F02）と集計", () => {
   it("未紐付けの数は、対象外のWPとphaseを除いて数える", () => {
     const { s: s0, id } = expanded();
@@ -166,6 +211,17 @@ describe("見積（F04）", () => {
     // 工数を手で変えたら、見積基準の適用は外れる
     s = okState(setEstimate(s, wp, { hours: 9, basis: e?.basis ?? "" }, id));
     expect(planSummary(s).standardAppliedCount).toBe(0);
+  });
+
+  it("根拠だけを手で書き換えても、工数を空にしても、見積基準の適用は外れる", () => {
+    const { s: s0, id } = expanded();
+    const wp = wpByName(s0, "設計").id;
+    const std = s0.estimationStandards[0];
+    const applied = okState(applyStandard(s0, wp, std.id, 2, id));
+    const hours = applied.estimates[0].hours;
+    expect(planSummary(okState(setEstimate(applied, wp, { hours, basis: "手で書いた根拠" }, id))).standardAppliedCount).toBe(0);
+    const cleared = okState(setEstimate(applied, wp, { hours: null, basis: applied.estimates[0].basis }, id));
+    expect(cleared.estimates[0]).toMatchObject({ hours: 0, standardId: null });
   });
 
   it("対象外のWPの見積は合計に入れない。範囲外の工数・数量は拒否する", () => {

@@ -4,7 +4,9 @@
 // これは整合性の検証であり、意図的な改ざんは検知できない。
 import {
   CURRENT_SCHEMA_VERSION,
+  REQUIRED_WP_CATEGORY,
   REQUIRED_WP_KEYS,
+  WBS_CODE_PATTERN,
   type AppState,
   type AuditLog,
   type Baseline,
@@ -201,7 +203,7 @@ class Reader {
   }
 }
 
-const STATE_KEYS = [
+export const STATE_KEYS = [
   "schemaVersion", "proposal", "project", "objectives", "objectiveTraces", "members", "projectMembers",
   "wbsNodes", "estimates", "estimationStandards", "baselines", "baselineItems", "gateReviews",
   "timeEntries", "evmSnapshots", "syncRuns", "auditLogs", "settings", "lastExportedAt",
@@ -526,11 +528,24 @@ export function checkIntegrity(s: AppState): string[] {
       errors.push(`wbsNodes[${i}]：計画開始日が計画終了日より後です`);
     }
   });
+  const nodeById = new Map(s.wbsNodes.map((n) => [n.id, n]));
+  // 見積はWP 1件につき1件まで、WPだけに付ける（合計やベースラインの計画工数で、どの見積を使うかを1つに決めるため）
+  const estimatedNodes = new Set<string>();
   s.estimates.forEach((e, i) => {
     ref(`estimates[${i}].wbsNodeId`, e.wbsNodeId, nodeIds, "WBS要素");
     ref(`estimates[${i}].standardId`, e.standardId, standardIds, "見積基準");
+    if (nodeById.get(e.wbsNodeId)?.kind === "phase") errors.push(`estimates[${i}]：phase に見積は付けられません`);
+    if (estimatedNodes.has(e.wbsNodeId)) errors.push(`estimates[${i}]：同じWBS要素の見積が重複しています`);
+    estimatedNodes.add(e.wbsNodeId);
   });
-  const nodeById = new Map(s.wbsNodes.map((n) => [n.id, n]));
+  // 目的の紐付けは、同じ目的とWPの組を重複させず、WPだけに付ける
+  const tracePairs = new Set<string>();
+  s.objectiveTraces.forEach((t, i) => {
+    if (nodeById.get(t.wbsNodeId)?.kind === "phase") errors.push(`objectiveTraces[${i}]：phase は目的に紐付けられません`);
+    const pair = `${t.objectiveId}\u0000${t.wbsNodeId}`;
+    if (tracePairs.has(pair)) errors.push(`objectiveTraces[${i}]：同じ目的とWBS要素の紐付けが重複しています`);
+    tracePairs.add(pair);
+  });
   const itemPairs = new Set<string>();
   s.baselineItems.forEach((b, i) => {
     ref(`baselineItems[${i}].baselineId`, b.baselineId, baselineIds, "ベースライン");
@@ -559,12 +574,14 @@ export function checkIntegrity(s: AppState): string[] {
   const codes = new Set<string>();
   const requiredKeys = new Set<string>();
   s.wbsNodes.forEach((n, i) => {
-    if (n.code.trim() !== "" && codes.has(n.code)) errors.push(`wbsNodes[${i}]：WBSコード「${n.code}」が重複しています`);
+    if (!WBS_CODE_PATTERN.test(n.code)) errors.push(`wbsNodes[${i}]：WBSコードの形式が正しくありません`);
+    else if (codes.has(n.code)) errors.push(`wbsNodes[${i}]：WBSコード「${n.code}」が重複しています`);
     codes.add(n.code);
     if (n.requiredKey !== null) {
       if (requiredKeys.has(n.requiredKey)) errors.push(`wbsNodes[${i}]：必須WP「${n.requiredKey}」が重複しています`);
       requiredKeys.add(n.requiredKey);
       if (n.kind !== "work_package") errors.push(`wbsNodes[${i}]：必須WPがWPではありません`);
+      if (n.category !== REQUIRED_WP_CATEGORY[n.requiredKey]) errors.push(`wbsNodes[${i}]：必須WPの作業区分が正しくありません`);
     }
     if (n.excluded && n.excludedReason.trim() === "") errors.push(`wbsNodes[${i}]：対象外の理由がありません`);
     if (n.parentId !== null && nodeById.get(n.parentId)?.kind === "work_package") {

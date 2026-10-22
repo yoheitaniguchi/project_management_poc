@@ -1,7 +1,7 @@
 // 計画画面の操作（F03 WBS、F02 目的の紐付け、F04 見積。CLAUDE.md 3.1・7.2）。
 // 状態を変える関数は、結果が validateState に通る状態だけを返す。4章のルールに反する操作は理由（日本語）を返す
 import type { OpResult } from "./proposal";
-import type { AppState, EstimationStandard, RequiredWpKey, WbsNode, WorkCategory } from "./types";
+import { REQUIRED_WP_KEYS, WBS_CODE_PATTERN, type AppState, type EstimationStandard, type RequiredWpKey, type WbsNode, type WorkCategory } from "./types";
 import { isValidDate, LIMITS } from "./validate";
 
 const ok = (state: AppState): OpResult => ({ ok: true, state });
@@ -22,7 +22,10 @@ interface TemplatePhase {
   wps: TemplateWp[];
 }
 
-/** WBSテンプレート（社内の標準WP構成。版1）。必須WP（3.3）を含む */
+/**
+ * WBSテンプレート（社内の標準WP構成。版1）。必須WP（3.3）を含む。
+ * テンプレートの版は状態に記録しない（PoCではテンプレートが1つだけで、展開も1回のため。複数の版を持つときに記録する）
+ */
 export const WBS_TEMPLATE: { version: string; phases: TemplatePhase[] } = {
   version: "1",
   phases: [
@@ -106,9 +109,13 @@ export function expandTemplate(state: AppState, newId: () => string): OpResult {
       );
     });
   });
-  const standards =
-    state.estimationStandards.length > 0 ? state.estimationStandards : PROVISIONAL_STANDARDS.map((s) => ({ ...s, id: newId() }));
-  return ok({ ...state, wbsNodes: nodes, estimationStandards: standards });
+  return seedProvisionalStandards({ ...state, wbsNodes: nodes }, newId);
+}
+
+/** 見積基準が無ければ、仮の見積基準を入れる（テンプレートを使わずにWBSを作った場合や、移行したデータのため） */
+export function seedProvisionalStandards(state: AppState, newId: () => string): OpResult {
+  if (state.estimationStandards.length > 0) return ok(state);
+  return ok({ ...state, estimationStandards: PROVISIONAL_STANDARDS.map((s) => ({ ...s, id: newId() })) });
 }
 
 // ---------------------------------------------------------------- 要素の追加・編集・削除
@@ -142,15 +149,20 @@ export function addWorkPackage(state: AppState, parentId: string, newId: () => s
 }
 
 export type NodePatch = Partial<Pick<WbsNode, "code" | "name" | "category" | "plannedStart" | "plannedEnd">>;
+const NODE_PATCH_KEYS = ["code", "name", "category", "plannedStart", "plannedEnd"] as const;
 
 const CATEGORIES: readonly WorkCategory[] = ["functional", "non_functional_security", "operation_transition"];
 
 export function updateNode(state: AppState, id: string, rawPatch: NodePatch): OpResult {
   const node = state.wbsNodes.find((n) => n.id === id);
   if (!node) return fail("WBS要素が見つかりません");
-  const patch = Object.fromEntries(Object.entries(rawPatch).filter(([, v]) => v !== undefined)) as NodePatch;
+  // 変えてよい項目だけを取り出す（id・kind・requiredKey・対象外などは、ここでは変えさせない）
+  const patch: NodePatch = {};
+  for (const k of NODE_PATCH_KEYS) if (rawPatch[k] !== undefined) Object.assign(patch, { [k]: rawPatch[k] });
   if (patch.code !== undefined) {
     if (typeof patch.code !== "string" || patch.code.trim() === "") return fail("WBSコードを入力してください");
+    patch.code = patch.code.trim();
+    if (!WBS_CODE_PATTERN.test(patch.code)) return fail("WBSコードは英数字で始め、英数字・ピリオド・アンダースコア・ハイフンだけで、40文字以内にしてください");
     if (state.wbsNodes.some((n) => n.id !== id && n.code === patch.code)) return fail(`WBSコード「${patch.code}」はすでに使われています`);
   }
   if (patch.name !== undefined && typeof patch.name !== "string") return fail("作業名の値が正しくありません");
@@ -170,11 +182,17 @@ export function updateNode(state: AppState, id: string, rawPatch: NodePatch): Op
   return ok({ ...state, wbsNodes: state.wbsNodes.map((n) => (n.id === id ? { ...n, ...patch } : n)) });
 }
 
-/** WPを対象外にする／戻す（本番リリースの無い案件など）。対象外にするには理由が要る */
+/**
+ * WPを対象外にする／戻す（本番リリースの無い案件など）。対象外にするには理由が要る。
+ * 確定済みのベースラインに含まれるWPは対象外にできない（明細と食い違うため。改版での扱いはベースラインの確定と合わせて決める）
+ */
 export function setExcluded(state: AppState, id: string, excluded: boolean, reason: string): OpResult {
   const node = state.wbsNodes.find((n) => n.id === id);
   if (!node || !isWp(node)) return fail("WPが見つかりません");
   if (excluded && reason.trim() === "") return fail("対象外にする理由を入力してください");
+  if (excluded && state.baselineItems.some((b) => b.wbsNodeId === id)) {
+    return fail("確定済みのベースラインに含まれるWPのため、対象外にできません");
+  }
   if (tooLong(reason)) return fail("文字数が多すぎます");
   return ok({
     ...state,
@@ -266,7 +284,10 @@ export interface EstimateInput {
   basis: string;
 }
 
-/** 見積工数と見積根拠を手で入れる（見積基準の適用は外れる）。工数を空にすると見積を消す */
+/**
+ * 見積工数と見積根拠を手で入れる。工数か根拠を変えると見積基準の適用は外れる（根拠の文と適用の記録を食い違わせない）。
+ * 工数を空にすると見積を消す（根拠が残っていれば0時間として残す）
+ */
 export function setEstimate(state: AppState, wbsNodeId: string, input: EstimateInput, newId: () => string): OpResult {
   const node = state.wbsNodes.find((n) => n.id === wbsNodeId);
   if (!node || !isWp(node)) return fail("見積はWPに入力してください");
@@ -274,7 +295,7 @@ export function setEstimate(state: AppState, wbsNodeId: string, input: EstimateI
   const existing = state.estimates.find((e) => e.wbsNodeId === wbsNodeId);
   if (input.hours === null) {
     if (!existing) return ok(state);
-    if (input.basis.trim() !== "") return ok({ ...state, estimates: state.estimates.map((e) => (e.id === existing.id ? { ...e, hours: 0, basis: input.basis } : e)) });
+    if (input.basis.trim() !== "") return ok({ ...state, estimates: state.estimates.map((e) => (e.id === existing.id ? { ...e, hours: 0, basis: input.basis, standardId: null } : e)) });
     return ok({ ...state, estimates: state.estimates.filter((e) => e.id !== existing.id) });
   }
   if (!Number.isFinite(input.hours) || input.hours < 0 || input.hours > LIMITS.maxHours) {
@@ -282,7 +303,7 @@ export function setEstimate(state: AppState, wbsNodeId: string, input: EstimateI
   }
   const hours = input.hours;
   if (existing) {
-    const changed = existing.hours !== hours;
+    const changed = existing.hours !== hours || existing.basis !== input.basis;
     return ok({
       ...state,
       estimates: state.estimates.map((e) =>
@@ -293,13 +314,21 @@ export function setEstimate(state: AppState, wbsNodeId: string, input: EstimateI
   return ok({ ...state, estimates: [...state.estimates, { id: newId(), wbsNodeId, hours, basis: input.basis, standardId: null }] });
 }
 
+/** 見積基準を数量に当てたときの見積工数と見積根拠。数量が不正なら null */
+export function standardResult(standard: EstimationStandard, quantity: number): { hours: number; basis: string } | null {
+  if (!Number.isFinite(quantity) || quantity <= 0 || quantity > 10_000) return null;
+  const hours = Math.round(standard.hoursPerUnit * quantity * 100) / 100;
+  const basis = `見積基準「${standard.workType}」${standard.provisional ? "（仮）" : ""} ${standard.hoursPerUnit}時間/${standard.sizeUnit} × ${quantity}${standard.sizeUnit}`;
+  return { hours, basis };
+}
+
 /** 見積基準を適用する：工数 ＝ 単位あたり工数 × 数量。見積根拠に基準と数量を残す */
 export function applyStandard(state: AppState, wbsNodeId: string, standardId: string, quantity: number, newId: () => string): OpResult {
   const standard = state.estimationStandards.find((s) => s.id === standardId);
   if (!standard) return fail("見積基準が見つかりません");
-  if (!Number.isFinite(quantity) || quantity <= 0 || quantity > 10_000) return fail("数量は0より大きい数値で入力してください");
-  const hours = Math.round(standard.hoursPerUnit * quantity * 100) / 100;
-  const basis = `見積基準「${standard.workType}」${standard.provisional ? "（仮）" : ""} ${standard.hoursPerUnit}時間/${standard.sizeUnit} × ${quantity}${standard.sizeUnit}`;
+  const result = standardResult(standard, quantity);
+  if (!result) return fail("数量は0より大きく、10000以下の数値で入力してください");
+  const { hours, basis } = result;
   const r = setEstimate(state, wbsNodeId, { hours, basis }, newId);
   if (!r.ok) return r;
   return ok({ ...r.state, estimates: r.state.estimates.map((e) => (e.wbsNodeId === wbsNodeId ? { ...e, standardId } : e)) });
@@ -320,6 +349,8 @@ export interface PlanSummary {
   unlinkedCount: number;
   excludedCount: number;
   targetCount: number;
+  /** WBSに無い必須WP（3.3）。テンプレートを使わずに作ったWBSや、移行したデータで起こる */
+  missingRequiredKeys: RequiredWpKey[];
 }
 
 export function planSummary(state: AppState): PlanSummary {
@@ -332,6 +363,7 @@ export function planSummary(state: AppState): PlanSummary {
     unlinkedCount: targets.filter((n) => isUnlinked(state, n)).length,
     excludedCount: state.wbsNodes.filter((n) => isWp(n) && n.excluded).length,
     targetCount: targets.length,
+    missingRequiredKeys: REQUIRED_WP_KEYS.filter((k) => !state.wbsNodes.some((n) => n.requiredKey === k)),
   };
 }
 
