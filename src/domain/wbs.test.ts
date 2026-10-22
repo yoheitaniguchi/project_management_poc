@@ -146,6 +146,14 @@ describe("要素の編集の守り", () => {
     expect(s.wbsNodes.find((n) => n.id === req.id)).toEqual({ ...req, name: "脅威分析（改）" });
   });
 
+  it("計画日は2000〜2099年の日付だけを受け付ける（極端な期間で営業日の計算が止まらないように）", () => {
+    const { s } = expanded();
+    const wp = wpByName(s, "設計");
+    expect(updateNode(s, wp.id, { plannedEnd: "9999-12-31" })).toEqual({ ok: false, error: "計画日は2000〜2099年の日付にしてください" });
+    expect(updateNode(s, wp.id, { plannedStart: "1999-12-31" }).ok).toBe(false);
+    expect(updateNode(s, wp.id, { plannedStart: "2099-12-31" }).ok).toBe(true);
+  });
+
   it("WBSコードは前後の空白を除いて保存し、形式に合わないコードは拒否する", () => {
     const { s: s0 } = expanded();
     const wp = wpByName(s0, "設計");

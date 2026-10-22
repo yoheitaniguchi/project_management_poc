@@ -368,6 +368,8 @@ function NodeEditor({ state, node, exec, error, newId, onAddWp, onRemove }: Edit
             <input
               id="node-start"
               type="date"
+              min="2000-01-01"
+              max="2099-12-31"
               value={node.plannedStart ?? ""}
               onChange={(e) => exec((s) => updateNode(s, node.id, { plannedStart: e.target.value || null }))}
             />
@@ -375,6 +377,8 @@ function NodeEditor({ state, node, exec, error, newId, onAddWp, onRemove }: Edit
             <input
               id="node-end"
               type="date"
+              min="2000-01-01"
+              max="2099-12-31"
               value={node.plannedEnd ?? ""}
               onChange={(e) => exec((s) => updateNode(s, node.id, { plannedEnd: e.target.value || null }))}
             />

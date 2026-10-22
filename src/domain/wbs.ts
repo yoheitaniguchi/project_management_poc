@@ -1,8 +1,8 @@
 // 計画画面の操作（F03 WBS、F02 目的の紐付け、F04 見積。CLAUDE.md 3.1・7.2）。
 // 状態を変える関数は、結果が validateState に通る状態だけを返す。4章のルールに反する操作は理由（日本語）を返す
 import type { OpResult } from "./proposal";
-import { REQUIRED_WP_KEYS, WBS_CODE_PATTERN, type AppState, type EstimationStandard, type RequiredWpKey, type WbsNode, type WorkCategory } from "./types";
-import { isValidDate, LIMITS } from "./validate";
+import { latestBaselineOf, REQUIRED_WP_KEYS, WBS_CODE_PATTERN, type AppState, type EstimationStandard, type RequiredWpKey, type WbsNode, type WorkCategory } from "./types";
+import { isPlanDate, isValidDate, LIMITS } from "./validate";
 
 const ok = (state: AppState): OpResult => ({ ok: true, state });
 const fail = (error: string): OpResult => ({ ok: false, error });
@@ -175,6 +175,7 @@ export function updateNode(state: AppState, id: string, rawPatch: NodePatch): Op
   for (const k of ["plannedStart", "plannedEnd"] as const) {
     const v = patch[k];
     if (v !== undefined && v !== null && !isValidDate(v)) return fail("日付の形式が正しくありません");
+    if (v !== undefined && v !== null && !isPlanDate(v)) return fail(`計画日は${LIMITS.planYearMin}〜${LIMITS.planYearMax}年の日付にしてください`);
   }
   const start = patch.plannedStart !== undefined ? patch.plannedStart : node.plannedStart;
   const end = patch.plannedEnd !== undefined ? patch.plannedEnd : node.plannedEnd;
@@ -203,7 +204,7 @@ export function setExcluded(state: AppState, id: string, excluded: boolean, reas
 
 /** 最新の版（版番号が最大）の明細に含まれるか */
 export function inLatestBaseline(state: AppState, wbsNodeId: string): boolean {
-  const latest = state.baselines.reduce<{ id: string; version: number } | null>((a, b) => (a === null || b.version > a.version ? b : a), null);
+  const latest = latestBaselineOf(state.baselines);
   return latest !== null && state.baselineItems.some((x) => x.baselineId === latest.id && x.wbsNodeId === wbsNodeId);
 }
 

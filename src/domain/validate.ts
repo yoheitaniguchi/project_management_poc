@@ -25,6 +25,7 @@ import {
   type SyncRun,
   type TimeEntry,
   type WbsNode,
+  latestBaselineOf,
 } from "./types";
 
 export const LIMITS = {
@@ -42,6 +43,11 @@ export const LIMITS = {
   maxMinutesPerEntry: 24 * 60,
   /** 監査ログの変更前後の値（JSON文字列）の長さの上限。maxStringLength より短くし、保存したものを必ず読み戻せるようにする */
   maxAuditPayloadLength: 2_000,
+  /** 改版理由・改版で外す理由の長さの上限。監査ログに全文が収まるようにする */
+  maxReasonLength: 500,
+  /** 計画日に使える年の範囲（極端な期間で営業日の計算が止まらないようにする） */
+  planYearMin: 2000,
+  planYearMax: 2099,
 };
 
 const FORBIDDEN_KEYS = new Set(["__proto__", "constructor", "prototype"]);
@@ -78,6 +84,13 @@ export function findForbiddenKeys(value: unknown, path = "$", depth = 0, found: 
 
 const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const DATETIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
+
+/** 計画日として使える日付（実在し、年が LIMITS の範囲内） */
+export function isPlanDate(s: string): boolean {
+  if (!isValidDate(s)) return false;
+  const y = Number(s.slice(0, 4));
+  return y >= LIMITS.planYearMin && y <= LIMITS.planYearMax;
+}
 
 export function isValidDate(s: string): boolean {
   const m = DATE_RE.exec(s);
@@ -524,12 +537,20 @@ export function checkIntegrity(s: AppState): string[] {
   s.projectMembers.forEach((m, i) => ref(`projectMembers[${i}].memberId`, m.memberId, memberIds, "メンバー"));
   s.wbsNodes.forEach((n, i) => {
     ref(`wbsNodes[${i}].parentId`, n.parentId, nodeIds, "WBS要素");
+    if ((n.plannedStart !== null && !isPlanDate(n.plannedStart)) || (n.plannedEnd !== null && !isPlanDate(n.plannedEnd))) {
+      errors.push(`wbsNodes[${i}]：計画日の年が範囲外です（${LIMITS.planYearMin}〜${LIMITS.planYearMax}年）`);
+    }
     if (n.plannedStart && n.plannedEnd && n.plannedStart > n.plannedEnd) {
       errors.push(`wbsNodes[${i}]：計画開始日が計画終了日より後です`);
     }
   });
   const nodeById = new Map(s.wbsNodes.map((n) => [n.id, n]));
-  const latestBaselineId = [...s.baselines].sort((a, b) => b.version - a.version)[0]?.id ?? null;
+  const latestBaselineId = latestBaselineOf(s.baselines)?.id ?? null;
+  const versionOf = new Map(s.baselines.map((b) => [b.id, b.version]));
+  const nodesOfVersion = (version: number) => {
+    const b = s.baselines.find((x) => x.version === version);
+    return new Set(b ? s.baselineItems.filter((x) => x.baselineId === b.id).map((x) => x.wbsNodeId) : []);
+  };
   // 見積はWP 1件につき1件まで、WPだけに付ける（合計やベースラインの計画工数で、どの見積を使うかを1つに決めるため）
   const estimatedNodes = new Set<string>();
   s.estimates.forEach((e, i) => {
@@ -555,8 +576,14 @@ export function checkIntegrity(s: AppState): string[] {
     if (b.plannedHours <= 0) errors.push(`baselineItems[${i}]：計画工数が0です`);
     const node = nodeById.get(b.wbsNodeId);
     if (node && node.kind !== "work_package") errors.push(`baselineItems[${i}]：phase は明細にできません`);
-    // 過去の版の明細は凍結した記録なので、改版で外したWP（今は対象外）を含んでいてよい。最新の版には対象外のWPを入れない
-    if (node && node.excluded && b.baselineId === latestBaselineId) errors.push(`baselineItems[${i}]：対象外のWPは明細にできません`);
+    // 過去の版の明細は凍結した記録なので、改版で外したWP（今は対象外）を含んでいてよい。ただし、次の版で外れている（次の版の明細に無い）こと。
+    // 最新の版には対象外のWPを入れない
+    if (node && node.excluded) {
+      const version = versionOf.get(b.baselineId);
+      if (b.baselineId === latestBaselineId) errors.push(`baselineItems[${i}]：対象外のWPは明細にできません`);
+      else if (version !== undefined && nodesOfVersion(version + 1).has(node.id)) errors.push(`baselineItems[${i}]：対象外のWPが次の版にも残っています`);
+    }
+    if (!isPlanDate(b.plannedStart) || !isPlanDate(b.plannedEnd)) errors.push(`baselineItems[${i}]：計画日の年が範囲外です`);
     const pair = `${b.baselineId}\u0000${b.wbsNodeId}`;
     if (itemPairs.has(pair)) errors.push(`baselineItems[${i}]：同じ版に同じWBS要素の明細が重複しています`);
     itemPairs.add(pair);
@@ -624,6 +651,19 @@ export function checkIntegrity(s: AppState): string[] {
     if (i > 0 && b.approvedOn < ordered[i - 1].approvedOn) errors.push(`baselines：v${b.version}の合意日が前の版より前です`);
   });
   if (ordered[0] && s.proposal.approvedOn !== ordered[0].approvedOn) errors.push("proposal.approvedOn：ベースラインv1の合意日と違います");
+  if (!ordered[0] && s.proposal.approvedOn !== null) errors.push("proposal.approvedOn：ベースラインが無いのに承認日があります");
+  ordered.forEach((b) => {
+    if (b.version === 1 && b.gate !== "G1+2") errors.push("baselines：v1の承認ゲートが G1+2 ではありません");
+    if (b.version >= 2 && b.gate !== "改版") errors.push(`baselines：v${b.version}の承認ゲートが 改版 ではありません`);
+    if (b.revisionReason !== null && b.revisionReason.length > LIMITS.maxReasonLength) errors.push(`baselines：v${b.version}の改版理由が長すぎます`);
+  });
+  // 承認の記録は v1 を指し、合意日が v1 と同じ
+  s.gateReviews.forEach((g, i) => {
+    if (g.decision !== "approved" || g.baselineId === null) return;
+    const b = s.baselines.find((x) => x.id === g.baselineId);
+    if (b && b.version !== 1) errors.push(`gateReviews[${i}]：承認の記録がv1以外の版を指しています`);
+    if (b && g.reviewedOn !== b.approvedOn) errors.push(`gateReviews[${i}]：承認の日付がv1の合意日と違います`);
+  });
   // 各版について：明細が1件以上ある。v1は確定（baseline.confirm）、v2以降は改版（baseline.revise）の監査ログがある。
   // v2以降は改版理由が要る。v1は G1+2 承認と同じ操作で確定するので、その版を指す承認の記録がある
   for (const b of s.baselines) {

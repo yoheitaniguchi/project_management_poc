@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { businessDays, isBusinessDay, localDate } from "./calendar";
+import { businessDays, hasBusinessDay, isBusinessDay, localDate } from "./calendar";
 
 describe("営業日（5章：土日と設定の祝日を除く）", () => {
   it("土日を除き、開始日と終了日の両方を含む", () => {
@@ -27,5 +27,23 @@ describe("営業日（5章：土日と設定の祝日を除く）", () => {
 
   it("端末の時刻での日付", () => {
     expect(localDate(new Date(2026, 9, 26, 23, 59))).toBe("2026-10-26");
+  });
+
+  it("開始日と終了日が同じ平日は1日。土日に重なる祝日は数に影響しない。うるう日も数える", () => {
+    expect(businessDays("2026-10-28", "2026-10-28", [])).toEqual(["2026-10-28"]);
+    expect(businessDays("2026-10-24", "2026-10-26", ["2026-10-25"])).toEqual(["2026-10-26"]);
+    expect(businessDays("2028-02-28", "2028-03-01", [])).toEqual(["2028-02-28", "2028-02-29", "2028-03-01"]);
+  });
+
+  it("日付として読めない文字列は営業日にしない", () => {
+    expect(isBusinessDay("not-a-date", [])).toBe(false);
+  });
+
+  it("営業日が1日でもあるかは、長い期間でもすぐに判定できる", () => {
+    const t = Date.now();
+    expect(hasBusinessDay("2000-01-01", "2099-12-31", [])).toBe(true);
+    expect(hasBusinessDay("2026-10-24", "2026-10-25", [])).toBe(false);
+    expect(hasBusinessDay("2026-11-03", "2026-11-03", ["2026-11-03"])).toBe(false);
+    expect(Date.now() - t).toBeLessThan(100);
   });
 });

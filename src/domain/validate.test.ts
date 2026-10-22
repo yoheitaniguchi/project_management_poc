@@ -214,6 +214,45 @@ describe("validateState：WBS・見積・紐付けの規則（版2）", () => {
     expect(errorsOf((r) => ((r.proposal as Record<string, unknown>).approvedOn = "2030-01-08"))).toMatch(/v1の合意日と違います/);
   });
 
+  it("承認ゲート・承認日・承認の記録の食い違いを拒否する", () => {
+    expect(errorsOf((r) => (list(r, "baselines")[0].gate = "改版"))).toMatch(/v1の承認ゲート/);
+    expect(errorsOf((r) => {
+      withV2(r);
+      list(r, "baselines")[1].gate = "G1+2";
+    })).toMatch(/v2の承認ゲート/);
+    expect(errorsOf((r) => (list(r, "gateReviews")[0].reviewedOn = "2030-01-08"))).toMatch(/承認の日付がv1の合意日と違います/);
+    expect(errorsOf((r) => {
+      withV2(r);
+      list(r, "gateReviews").push({ ...list(r, "gateReviews")[0], id: "g2", baselineId: "b2" });
+    })).toMatch(/v1以外の版を指しています/);
+    expect(errorsOf((r) => {
+      withV2(r);
+      list(r, "baselines")[1].revisionReason = "あ".repeat(501);
+    })).toMatch(/改版理由が長すぎます/);
+  });
+
+  it("ベースラインが無いのに承認日があるデータを拒否する", () => {
+    const raw = { ...createInitialState(), proposal: { ...createInitialState().proposal, approvedOn: "2030-01-07" } };
+    const r = validateState(raw);
+    expect(r.ok ? "" : r.errors.join()).toMatch(/ベースラインが無いのに承認日があります/);
+  });
+
+  it("過去の版の対象外のWPが、次の版にも残っているデータを拒否する", () => {
+    expect(errorsOf((r) => {
+      withV2(r);
+      list(r, "baselineItems").push({ ...list(r, "baselineItems")[0], id: "bi3", baselineId: "b1", wbsNodeId: "n3" });
+      list(r, "baselines").push({ ...list(r, "baselines")[0], id: "b3", version: 3, gate: "改版", approvedOn: "2030-01-09", revisionReason: "r" });
+      list(r, "baselineItems").push({ ...list(r, "baselineItems")[0], id: "bi4", baselineId: "b3" });
+      list(r, "auditLogs").push({ ...list(r, "auditLogs")[0], id: "a3", seq: 3, targetId: "b3", action: "baseline.revise" });
+      list(r, "baselineItems").push({ ...list(r, "baselineItems")[0], id: "bi5", baselineId: "b2", wbsNodeId: "n3" });
+    })).toMatch(/次の版にも残っています/);
+  });
+
+  it("計画日の年が範囲外のデータを拒否する", () => {
+    expect(errorsOf((r) => (node(r, "n2").plannedEnd = "9999-12-31"))).toMatch(/計画日の年が範囲外/);
+    expect(errorsOf((r) => (list(r, "baselineItems")[0].plannedStart = "1000-01-01"))).toMatch(/計画日の年が範囲外/);
+  });
+
   it("必須WPの作業名が空のデータを拒否する", () => {
     expect(errorsOf((r) => Object.assign(node(r, "n3"), { requiredKey: "operation_design", name: " " }))).toMatch(/必須WPの作業名がありません/);
   });

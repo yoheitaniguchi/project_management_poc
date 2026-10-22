@@ -232,7 +232,7 @@ function ApprovalDialog({ state, mode, onClose, onSubmit, newId, error }: Dialog
         {mode === "revise" && (
           <>
             <label htmlFor="approval-reason">改版理由</label>
-            <textarea id="approval-reason" rows={2} value={revisionReason} onChange={(e) => setRevisionReason(e.target.value)} />
+            <textarea id="approval-reason" rows={2} maxLength={500} value={revisionReason} onChange={(e) => setRevisionReason(e.target.value)} />
           </>
         )}
         <label htmlFor="approval-comment">コメント</label>
@@ -261,7 +261,7 @@ function ApprovalDialog({ state, mode, onClose, onSubmit, newId, error }: Dialog
                 {checked.has(n.id) && (
                   <label className="trace-contribution">
                     外す理由{" "}
-                    <input value={excludeReasons[n.id] ?? ""} onChange={(e) => setExcludeReasons({ ...excludeReasons, [n.id]: e.target.value })} />
+                    <input maxLength={500} value={excludeReasons[n.id] ?? ""} onChange={(e) => setExcludeReasons({ ...excludeReasons, [n.id]: e.target.value })} />
                   </label>
                 )}
               </li>

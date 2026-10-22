@@ -8,13 +8,15 @@ import {
   itemsOf,
   latestBaseline,
   reviseBaseline,
+  type RevisionInput,
 } from "./baseline";
 import type { OpResult } from "./proposal";
-import { addMember, addObjective, updateMember } from "./proposal";
+import { addMember, addObjective, recordGateReturn, updateMember } from "./proposal";
+import { acceptCommit, reducer } from "./reducer";
 import { frozenRecordChanges } from "./persistence";
 import { expectValidState } from "./testState";
 import { createInitialState, type AppState } from "./types";
-import { expandTemplate, setEstimate, setExcluded, setTrace, targetWorkPackages, updateNode } from "./wbs";
+import { addWorkPackage, expandTemplate, setEstimate, setExcluded, setTrace, targetWorkPackages, updateNode } from "./wbs";
 
 const ids = () => {
   let n = 0;
@@ -147,7 +149,7 @@ describe("改版（v2 以降）", () => {
     const { s, id } = plannedState();
     return { s: okState(confirmBaseline(s, approval, NOW, id)), id };
   };
-  const revision = { ...approval, approvedOn: "2026-10-28", comment: "", revisionReason: "見積の見直し", exclusions: [] };
+  const revision: RevisionInput = { ...approval, approvedOn: "2026-10-28", comment: "", revisionReason: "見積の見直し", exclusions: [] };
 
   it("計画を変えて改版すると、新しい版を作り、前の版はそのまま残る", () => {
     const { s: s0, id } = confirmed();
@@ -159,6 +161,7 @@ describe("改版（v2 以降）", () => {
     expect(itemsOf(s, v1.id).find((x) => x.wbsNodeId === wp.id)?.plannedHours).toBe(2);
     expect(itemsOf(s, v2.id).find((x) => x.wbsNodeId === wp.id)?.plannedHours).toBe(5);
     expect(s.auditLogs.at(-1)).toMatchObject({ action: "baseline.revise", targetId: v2.id, operator: "PM太郎" });
+    expect(JSON.parse(s.auditLogs.at(-1)?.after ?? "{}")).toMatchObject({ version: 2, revisionReason: "見積の見直し" });
     expect(s.gateReviews).toHaveLength(1);
     expect(frozenRecordChanges(s1, s)).toEqual([]);
   });
@@ -182,7 +185,12 @@ describe("改版（v2 以降）", () => {
     expect(s.wbsNodes.find((n) => n.id === wp.id)).toMatchObject({ excluded: true, excludedReason: "範囲から外した" });
     expect(v2 && itemsOf(s, v2.id).some((x) => x.wbsNodeId === wp.id)).toBe(false);
     expect(itemsOf(s, s.baselines[0].id).some((x) => x.wbsNodeId === wp.id)).toBe(true);
-    expect(JSON.parse(s.auditLogs.at(-1)?.after ?? "{}").excluded).toEqual([{ wbsNodeId: wp.id, code: wp.code, reason: "範囲から外した" }]);
+    // 改版の記録と、外したWPごとの記録（理由は全文）
+    const [revise, exclude] = s.auditLogs.slice(-2);
+    expect(revise).toMatchObject({ action: "baseline.revise", targetId: v2?.id });
+    expect(JSON.parse(revise.after ?? "{}")).toMatchObject({ excludedCodes: [wp.code], revisionReason: "見積の見直し" });
+    expect(exclude).toMatchObject({ action: "baseline.exclude", targetType: "wbsNode", targetId: wp.id });
+    expect(JSON.parse(exclude.after ?? "{}")).toMatchObject({ version: 2, code: wp.code, reason: "範囲から外した" });
     // 外したWPは、v2 の後なら（最新の版に含まれないので）対象に戻せる
     expect(setExcluded(s, wp.id, false, "").ok).toBe(true);
   });
@@ -195,7 +203,106 @@ describe("改版（v2 以降）", () => {
     expect(req && applyExclusions(s0, [{ wbsNodeId: req.id, reason: "x" }]).ok).toBe(false);
     let s = s0;
     for (const n of targetWorkPackages(s0)) s = okState(setTrace(s, n.id, s.objectives[0].id, n.id === wp.id, id));
-    // 設計以外が未紐付けになった計画は、設計を外すと対象が残らず、残しても未紐付けがあるので改版できない
-    expect(reviseBaseline(s, revision, NOW, id).ok).toBe(false);
+    // 設計以外が未紐付けの計画：そのままでは未紐付けで、設計を外すと他も未紐付けのまま。どちらも改版せず、状態も変わらない
+    const r1 = reviseBaseline(s, revision, NOW, id);
+    expect(r1.ok).toBe(false);
+    if (!r1.ok) expect(r1.error).toMatch(/目的に紐付いていません/);
+    expect(reviseBaseline(s, { ...revision, exclusions: [{ wbsNodeId: wp.id, reason: "x" }] }, NOW, id).ok).toBe(false);
+    // 全部外すと、対象になるWPが無いので改版しない
+    const all = targetWorkPackages(s0).map((n) => ({ wbsNodeId: n.id, reason: "x" }));
+    const r2 = reviseBaseline(s0, { ...revision, exclusions: all }, NOW, id);
+    expect(r2.ok).toBe(false);
+    if (!r2.ok) expect(r2.error).toMatch(/対象になるWPがありません/);
+  });
+
+  it("改版の入力の誤りを、理由を付けて拒否する", () => {
+    const { s: s0, id } = confirmed();
+    const wp = wpNamed(s0, "設計");
+    const phase = s0.wbsNodes.find((n) => n.kind === "phase");
+    const fails = (input: Partial<typeof revision> & Record<string, unknown>) => {
+      const r = reviseBaseline(s0, { ...revision, ...input } as typeof revision, NOW, id);
+      return r.ok ? "" : r.error;
+    };
+    expect(fails({ approvedOn: "2026-10-29" })).toMatch(/未来/);
+    expect(fails({ approver: "a".repeat(10_001) })).toMatch(/文字数/);
+    expect(fails({ revisionReason: "a".repeat(501) })).toMatch(/500文字以内/);
+    expect(fails({ exclusions: [{ wbsNodeId: wp.id, reason: "a".repeat(501) }] })).toMatch(/500文字以内/);
+    expect(fails({ exclusions: [{ wbsNodeId: wp.id, reason: "x" }, { wbsNodeId: wp.id, reason: "y" }] })).toMatch(/重複/);
+    expect(fails({ exclusions: [{ wbsNodeId: phase?.id ?? "", reason: "x" }] })).toMatch(/WPではありません/);
+    expect(fails({ exclusions: [{ wbsNodeId: "nope", reason: "x" }] })).toMatch(/見つかりません/);
+    expect(fails({ exclusions: [null] as unknown as typeof revision.exclusions })).toMatch(/指定が正しくありません/);
+    expect(fails({ exclusions: "x" as unknown as typeof revision.exclusions })).toMatch(/指定が正しくありません/);
+    const req = s0.wbsNodes.find((n) => n.requiredKey !== null);
+    expect(fails({ exclusions: [{ wbsNodeId: req?.id ?? "", reason: "x" }] })).toMatch(/すでに対象外/);
+    // v1 の後に足したWPは最新の版に無いので、改版では外せない（計画画面で対象外にする）
+    const added = okState(addWorkPackage(s0, wpNamed(s0, "設計").parentId ?? "", () => "new-wp"));
+    const r = reviseBaseline(added, { ...revision, exclusions: [{ wbsNodeId: "new-wp", reason: "x" }] }, NOW, id);
+    expect(r.ok ? "" : r.error).toMatch(/最新の版に含まれていません/);
+    // v1 が無ければ改版できない
+    expect(reviseBaseline(plannedState().s, revision, NOW, id).ok).toBe(false);
+  });
+
+  it("長い改版理由・複数の外すWPでも、監査ログは JSON として読め、外したWPと理由が全文で残る", () => {
+    const { s: s0, id } = confirmed();
+    const names = ["設計", "開発", "テスト"];
+    const exclusions = names.map((n) => ({ wbsNodeId: wpNamed(s0, n).id, reason: `${n}を外す理由`.padEnd(500, "。") }));
+    const s = okState(reviseBaseline(s0, { ...revision, revisionReason: "あ".repeat(500), exclusions }, NOW, id));
+    const logs = s.auditLogs.slice(s0.auditLogs.length);
+    expect(logs.map((a) => a.action)).toEqual(["baseline.revise", "baseline.exclude", "baseline.exclude", "baseline.exclude"]);
+    const after = logs.map((a) => JSON.parse(a.after ?? "null"));
+    expect(after[0].revisionReason).toBe("あ".repeat(500));
+    expect(after.slice(1).map((x) => x.reason)).toEqual(exclusions.map((x) => x.reason));
+  });
+
+  it("合意日は前の版と同じ日でよい。v3 も連番になり、v2 で外したWPを戻して v3 に入れられる", () => {
+    const { s: s0, id } = confirmed();
+    const wp = wpNamed(s0, "設計");
+    let s = okState(reviseBaseline(s0, { ...revision, approvedOn: "2026-10-26", exclusions: [{ wbsNodeId: wp.id, reason: "x" }] }, NOW, id));
+    s = okState(setExcluded(s, wp.id, false, ""));
+    s = okState(reviseBaseline(s, { ...revision, revisionReason: "設計を戻す" }, NOW, id));
+    const v3 = latestBaseline(s);
+    expect(v3?.version).toBe(3);
+    expect(v3 && itemsOf(s, v3.id).some((x) => x.wbsNodeId === wp.id)).toBe(true);
+  });
+});
+
+describe("確定の境界", () => {
+  it("開始日が終了日より後のWPを理由に挙げる（読み込んだデータなど、編集画面を通らない場合）", () => {
+    const { s: s0 } = plannedState();
+    const wp = wpNamed(s0, "設計");
+    const s = { ...s0, wbsNodes: s0.wbsNodes.map((n) => (n.id === wp.id ? { ...n, plannedStart: "2026-10-30", plannedEnd: "2026-10-26" } : n)) };
+    expect(baselineBlockers(s).workPackages).toEqual([{ node: expect.objectContaining({ id: wp.id }), reasons: ["計画開始日が計画終了日より後です"] }]);
+  });
+
+  it("端末の時計が直前の監査ログより前に戻っていても、確定・改版の結果は検証に通る", () => {
+    const { s: s0, id } = plannedState();
+    const later = new Date(2026, 9, 28, 12, 0);
+    const s1 = { ...s0, auditLogs: s0.auditLogs.map((a) => ({ ...a, at: later.toISOString() })) };
+    const s = okState(confirmBaseline(s1, approval, NOW, id));
+    okState(reviseBaseline(s, { ...approval, revisionReason: "r", exclusions: [] }, NOW, id));
+  });
+
+  it("差戻しの後でも確定でき、企画は承認済みになる", () => {
+    const { s: s0, id } = plannedState();
+    const returned = okState(recordGateReturn(s0, { reviewer: "監理者A", reviewedOn: "2026-10-26", comment: "見直し" }, NOW, id));
+    expect(returned.proposal.status).toBe("returned");
+    expect(okState(confirmBaseline(returned, approval, NOW, id)).proposal.status).toBe("approved");
+  });
+
+  it("画面の操作と同じく reducer の apply を通しても受け付けられる", () => {
+    const { s: s0, id } = plannedState();
+    const s1 = reducer(s0, { type: "apply", op: (s) => confirmBaseline(s, approval, NOW, id) });
+    expect(s1.baselines).toHaveLength(1);
+    expect(acceptCommit(s0, s1)).toBe(true);
+    const s2 = reducer(s1, { type: "apply", op: (s) => reviseBaseline(s, { ...approval, revisionReason: "r", exclusions: [] }, NOW, id) });
+    expect(s2.baselines).toHaveLength(2);
+  });
+
+  it("BAC は小数の誤差を丸める", () => {
+    const { s: s0, id } = plannedState();
+    let s = okState(setEstimate(s0, wpNamed(s0, "設計").id, { hours: 0.1, basis: "" }, id));
+    s = okState(setEstimate(s, wpNamed(s, "開発").id, { hours: 0.2, basis: "" }, id));
+    s = okState(confirmBaseline(s, approval, NOW, id));
+    expect(bacOf(s, s.baselines[0].id)).toBe(0.3 + 2 * (targetWorkPackages(s).length - 2));
   });
 });

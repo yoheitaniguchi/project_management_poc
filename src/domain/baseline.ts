@@ -5,9 +5,9 @@
 //   期間内に営業日が無い、のいずれかがあるとき
 // 状態を変える関数は、結果が validateState に通る状態だけを返す
 import { appendAuditLog } from "./auditLog";
-import { businessDays, localDate } from "./calendar";
+import { hasBusinessDay, localDate } from "./calendar";
 import { operatorName, type OpResult } from "./proposal";
-import type { AppState, Baseline, BaselineItem, WbsNode } from "./types";
+import { latestBaselineOf, type AppState, type Baseline, type BaselineItem, type WbsNode } from "./types";
 import { isValidDate, LIMITS } from "./validate";
 import { isUnlinked, targetWorkPackages } from "./wbs";
 
@@ -19,9 +19,7 @@ export const GATE_G12 = "G1+2";
 export const GATE_REVISION = "改版";
 
 /** 最新の版（版番号が最大のもの）。まだ確定していなければ null */
-export function latestBaseline(state: AppState): Baseline | null {
-  return state.baselines.reduce<Baseline | null>((a, b) => (a === null || b.version > a.version ? b : a), null);
-}
+export const latestBaseline = (state: AppState): Baseline | null => latestBaselineOf(state.baselines);
 
 export const itemsOf = (state: AppState, baselineId: string): BaselineItem[] =>
   state.baselineItems.filter((x) => x.baselineId === baselineId);
@@ -59,7 +57,7 @@ export function baselineBlockers(state: AppState): Blockers {
       reasons.push("計画開始日・計画終了日がありません");
     } else if (node.plannedStart > node.plannedEnd) {
       reasons.push("計画開始日が計画終了日より後です");
-    } else if (businessDays(node.plannedStart, node.plannedEnd, state.settings.holidays).length === 0) {
+    } else if (!hasBusinessDay(node.plannedStart, node.plannedEnd, state.settings.holidays)) {
       reasons.push("計画の期間に営業日がありません");
     }
     if (reasons.length > 0) workPackages.push({ node, reasons });
@@ -182,13 +180,16 @@ export function applyExclusions(state: AppState, exclusions: Exclusion[]): OpRes
   const inLatest = new Set(latest ? itemsOf(state, latest.id).map((x) => x.wbsNodeId) : []);
   const seen = new Set<string>();
   for (const x of exclusions) {
+    if (typeof x !== "object" || x === null || typeof x.wbsNodeId !== "string") return fail("外すWPの指定が正しくありません");
     const node = state.wbsNodes.find((n) => n.id === x.wbsNodeId);
-    if (!node || node.kind !== "work_package" || node.excluded) return fail("外すWPが見つかりません");
+    if (!node) return fail("外すWPが見つかりません");
+    if (node.kind !== "work_package") return fail(`${node.code} はWPではありません`);
+    if (node.excluded) return fail(`${node.code} はすでに対象外です`);
     if (!inLatest.has(node.id)) return fail(`${node.code} は最新の版に含まれていません。版に含まれないWPは、計画画面で対象外にしてください`);
     if (seen.has(node.id)) return fail(`${node.code} が重複しています`);
     seen.add(node.id);
     if (typeof x.reason !== "string" || x.reason.trim() === "") return fail(`${node.code} ${node.name}を外す理由を入力してください`);
-    if (tooLong(x.reason)) return fail("文字数が多すぎます");
+    if (x.reason.length > LIMITS.maxReasonLength) return fail(`外す理由は${LIMITS.maxReasonLength}文字以内にしてください`);
   }
   const reasonOf = new Map(exclusions.map((x) => [x.wbsNodeId, x.reason]));
   return ok({
@@ -204,7 +205,7 @@ export function reviseBaseline(state: AppState, input: RevisionInput, now: Date,
   const latest = latestBaseline(state);
   if (!latest) return fail("まだベースラインv1がありません。先にG1+2承認で確定してください");
   if (typeof input.revisionReason !== "string" || input.revisionReason.trim() === "") return fail("改版理由を入力してください");
-  if (tooLong(input.revisionReason)) return fail("文字数が多すぎます");
+  if (input.revisionReason.length > LIMITS.maxReasonLength) return fail(`改版理由は${LIMITS.maxReasonLength}文字以内にしてください`);
   if (!Array.isArray(input.exclusions)) return fail("外すWPの指定が正しくありません");
   const invalid = checkApproval(state, input, now);
   if (invalid) return fail(invalid);
@@ -220,26 +221,36 @@ export function reviseBaseline(state: AppState, input: RevisionInput, now: Date,
     now,
     newId,
   );
-  const next: AppState = { ...planned, baselines: [...planned.baselines, baseline], baselineItems: [...planned.baselineItems, ...items] };
+  let next: AppState = { ...planned, baselines: [...planned.baselines, baseline], baselineItems: [...planned.baselineItems, ...items] };
   const nodeOf = (id: string) => state.wbsNodes.find((n) => n.id === id);
-  return ok(
-    appendAuditLog(
-      next,
-      {
-        operator: operatorName(state),
-        targetType: "baseline",
-        targetId: baseline.id,
-        action: "baseline.revise",
-        before: summaryOf(latest, itemsOf(state, latest.id)),
-        after: {
-          ...summaryOf(baseline, items),
-          revisionReason: input.revisionReason,
-          comment: input.comment,
-          excluded: input.exclusions.map((x) => ({ wbsNodeId: x.wbsNodeId, code: nodeOf(x.wbsNodeId)?.code ?? "", reason: x.reason })),
-        },
+  const operator = operatorName(state);
+  next = appendAuditLog(
+    next,
+    {
+      operator,
+      targetType: "baseline",
+      targetId: baseline.id,
+      action: "baseline.revise",
+      before: summaryOf(latest, itemsOf(state, latest.id)),
+      after: {
+        ...summaryOf(baseline, items),
+        revisionReason: input.revisionReason,
+        excludedCodes: input.exclusions.map((x) => nodeOf(x.wbsNodeId)?.code ?? ""),
+        comment: input.comment,
       },
+    },
+    now,
+    newId,
+  );
+  // 外したWPは1件ずつ記録する（理由を監査ログに全文で残す。WPの対象外の理由は後から変えられるため）
+  for (const x of input.exclusions) {
+    const node = nodeOf(x.wbsNodeId);
+    next = appendAuditLog(
+      next,
+      { operator, targetType: "wbsNode", targetId: x.wbsNodeId, action: "baseline.exclude", before: null, after: { baselineId: baseline.id, version: baseline.version, code: node?.code ?? "", name: node?.name ?? "", reason: x.reason } },
       now,
       newId,
-    ),
-  );
+    );
+  }
+  return ok(next);
 }
