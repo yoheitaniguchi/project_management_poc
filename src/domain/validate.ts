@@ -625,6 +625,7 @@ export function checkIntegrity(s: AppState): string[] {
     }
     if (n.excluded && n.excludedReason.trim() === "") errors.push(`wbsNodes[${i}]：対象外の理由がありません`);
     if (n.requiredKey !== null && n.name.trim() === "") errors.push(`wbsNodes[${i}]：必須WPの作業名がありません`);
+    if (n.kind === "phase" && n.completedOn !== null) errors.push(`wbsNodes[${i}]：phase に完了日は付けられません`);
     if (n.parentId !== null && nodeById.get(n.parentId)?.kind === "work_package") {
       errors.push(`wbsNodes[${i}]：WPの下に要素は置けません`);
     }
