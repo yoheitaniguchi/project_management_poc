@@ -27,6 +27,7 @@ import { localDate } from "../domain/calendar";
 import { clearCompleted, setCompleted } from "../domain/completion";
 import { CATEGORY_LABELS } from "../labels";
 import { ActualsImportPanel } from "./ActualsImportPanel";
+import { AsanaExportPanel } from "./AsanaExportPanel";
 import { BaselinePanel } from "./BaselinePanel";
 import { Modal } from "./Modal";
 import type { Run } from "./ProposalPage";
@@ -257,6 +258,8 @@ export function PlanPage({ state, run, newId, onGoToProposal }: Props) {
         error={<PlaceError error={error} place="baseline" />}
         onClearError={() => setError((e) => (e?.place === "baseline" ? null : e))}
       />
+
+      <AsanaExportPanel state={state} />
 
       <ActualsImportPanel state={state} exec={(op) => exec("actuals", op)} newId={newId} error={<PlaceError error={error} place="actuals" />} onGoToProposal={onGoToProposal} />
 
