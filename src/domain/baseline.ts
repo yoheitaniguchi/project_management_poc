@@ -199,7 +199,7 @@ export function applyExclusions(state: AppState, exclusions: Exclusion[]): OpRes
 }
 
 /**
- * 改版：計画を変えたときに、新しい版を確定する。改版理由は必須。外すWPは同じ操作で対象外にする
+ * 改版：新しい版を確定する（計画を変えていなくてもよい。人間の判断）。改版理由は必須。外すWPは同じ操作で対象外にする
  */
 export function reviseBaseline(state: AppState, input: RevisionInput, now: Date, newId: () => string): OpResult {
   const latest = latestBaseline(state);

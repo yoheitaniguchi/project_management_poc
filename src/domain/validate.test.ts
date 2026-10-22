@@ -253,6 +253,10 @@ describe("validateState：WBS・見積・紐付けの規則（版2）", () => {
     expect(errorsOf((r) => (list(r, "baselineItems")[0].plannedStart = "1000-01-01"))).toMatch(/計画日の年が範囲外/);
   });
 
+  it("要対応の閾値は整数のポイント", () => {
+    expect(errorsOf((r) => ((r.settings as Record<string, unknown>).alertThresholdPoints = 5.5))).toMatch(/整数ではありません/);
+  });
+
   it("必須WPの作業名が空のデータを拒否する", () => {
     expect(errorsOf((r) => Object.assign(node(r, "n3"), { requiredKey: "operation_design", name: " " }))).toMatch(/必須WPの作業名がありません/);
   });

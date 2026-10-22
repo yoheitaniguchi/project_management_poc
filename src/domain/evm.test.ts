@@ -133,6 +133,55 @@ describe("基準日の簡易EVM（手で計算した例）", () => {
     expect(computeEvm(s, "2026-10-23")).toMatchObject({ pv: 0, ev: 0, ac: 0, cpi: null, spi: null, eac: null, consumptionRate: 0, progressRate: 0 });
   });
 
+  it("計画の開始より前の実績：PV が0なので SPI は出さず、EV が0なので CPI は0・EAC は算出不可", () => {
+    const { s: s0, A } = planned();
+    const s = { ...s0, timeEntries: [entry(s0, A, "2026-10-23", 60)] };
+    // 10/23 の実績で A は着手（EV 5）になる
+    expect(computeEvm(s, "2026-10-23")).toMatchObject({ pv: 0, ev: 5, ac: 1, spi: null, cpi: 5 });
+    const s2 = { ...s0, timeEntries: [entry(s0, A, "2026-10-23", 60)], wbsNodes: s0.wbsNodes };
+    expect(computeEvm(s2, "2026-10-22")).toMatchObject({ pv: 0, ev: 0, ac: 0, cpi: null, spi: null, eac: null });
+  });
+
+  it("実績が無くても、完了日が基準日以前なら完了（100%）。完了日が基準日の後でも、実績があれば着手", () => {
+    const { s: s0, A, B } = planned();
+    const s = {
+      ...s0,
+      wbsNodes: s0.wbsNodes.map((n) => (n.id === A ? { ...n, completedOn: "2026-10-28" } : n.id === B ? { ...n, completedOn: "2026-10-31" } : n)),
+      timeEntries: [entry(s0, B, "2026-10-29", 30)],
+    };
+    expect(wpStatusAt(s, A, "2026-10-28")).toBe("done");
+    expect(wpStatusAt(s, B, "2026-10-30")).toBe("in_progress");
+    expect(computeEvm(s, "2026-10-30")).toMatchObject({ ev: 10 + 3 });
+  });
+
+  it("版の配列の順に関わらず、版番号が最大の版を基準にする", () => {
+    const { s: s0, id, B } = withActuals();
+    const s1 = okState(
+      reviseBaseline(s0, { approver: "監理者", approvedOn: "2026-10-26", comment: "", revisionReason: "開発を外す", exclusions: [{ wbsNodeId: B, reason: "範囲外" }] }, NOW, id),
+    );
+    const s = { ...s1, baselines: [...s1.baselines].reverse() };
+    expect(computeEvm(s, "2026-10-30")).toMatchObject({ version: 2, bac: 10 });
+  });
+
+  it("長い期間・多くの明細でも、営業日を算術で数えるのですぐに終わる", () => {
+    const { s: s0 } = planned();
+    const v1 = s0.baselines[0];
+    const items = Array.from({ length: 10_000 }, (_, i) => ({
+      id: `big${i}`,
+      baselineId: v1.id,
+      wbsNodeId: s0.baselineItems[0].wbsNodeId,
+      plannedHours: 1,
+      plannedStart: "2000-01-03",
+      plannedEnd: "2099-12-31",
+    }));
+    const holidays = Array.from({ length: 2000 }, (_, i) => new Date(Date.UTC(2000, 0, 3 + i * 5)).toISOString().slice(0, 10));
+    const s = { ...s0, baselineItems: items, settings: { ...s0.settings, holidays } };
+    const t = Date.now();
+    const r = computeEvm(s, "2050-06-15");
+    expect(Date.now() - t).toBeLessThan(1000);
+    expect(Number.isFinite(r?.pv)).toBe(true);
+  });
+
   it("ベースラインが無い、基準日が日付でないときは計算しない", () => {
     expect(computeEvm(createInitialState(), "2026-10-30")).toBeNull();
     expect(computeEvm(planned().s, "2026-13-01")).toBeNull();
@@ -165,14 +214,30 @@ describe("指標と要対応", () => {
     expect(indicators(10, 2, 0, 3)).toMatchObject({ cpi: 0, spi: 0, eac: null });
   });
 
-  it("ずれはポイント単位に丸めて比べ、閾値ちょうどは要対応にしない", () => {
-    // 0.75 − 0.7 は浮動小数では 0.05000000000000004 になるが、5 ポイントとして扱う
-    expect(gapPoints(0.75, 0.7)).toBe(5);
-    expect(isAlert(gapPoints(0.75, 0.7), 5)).toBe(false);
-    expect(isAlert(gapPoints(0.76, 0.7), 5)).toBe(true);
-    expect(isAlert(gapPoints(0.5, 0.7), 5)).toBe(false);
-    expect(gapPoints(null, 0.5)).toBeNull();
+  it("ずれ＝（AC − EV）÷ BAC をポイント単位（整数）に四捨五入し、閾値ちょうどは要対応にしない", () => {
+    // 0.75 − 0.7 のように率の差で計算すると 0.05000000000000004 になるが、割り算を1回にして 5 ポイントとして扱う
+    expect(gapPoints(100, 70, 75)).toBe(5);
+    expect(isAlert(gapPoints(100, 70, 75), 5)).toBe(false);
+    expect(isAlert(gapPoints(100, 70, 76), 5)).toBe(true);
+    // 5.4 は 5（要対応ではない）、5.5 は 6（要対応）
+    expect(gapPoints(100, 70, 75.4)).toBe(5);
+    expect(isAlert(gapPoints(1000, 700, 755), 5)).toBe(true);
+    // 進捗が消化を上回る（負のずれ）は要対応にしない。−0 は 0 にする
+    expect(isAlert(gapPoints(100, 70, 50), 5)).toBe(false);
+    expect(Object.is(gapPoints(100, 70, 69.6), 0)).toBe(true);
+    expect(gapPoints(0, 0, 3)).toBeNull();
     expect(isAlert(null, 5)).toBe(false);
+  });
+
+  it("要対応の境界を computeEvm でも確かめる（消化率 − 進捗率 が 5.5 ポイント → 6 で要対応）", () => {
+    const { s: s0, A } = planned();
+    // BAC 16。10/29：A 着手（EV 5）。AC を 5 ＋ 0.88 時間（52.8分 → 53分）にすると、ずれ ＝ 0.883…÷16 ≒ 5.5 ポイント
+    const s = { ...s0, timeEntries: [entry(s0, A, "2026-10-26", 300), entry(s0, A, "2026-10-27", 53)] };
+    const r = computeEvm(s, "2026-10-29");
+    expect(r?.ev).toBe(5);
+    expect(r).toMatchObject({ gapPoints: 6, alert: true });
+    const s2 = { ...s0, timeEntries: [entry(s0, A, "2026-10-26", 300), entry(s0, A, "2026-10-27", 51)] };
+    expect(computeEvm(s2, "2026-10-29")).toMatchObject({ gapPoints: 5, alert: false });
   });
 
   it("閾値は設定値を使う", () => {

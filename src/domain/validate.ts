@@ -475,7 +475,7 @@ function readSettings(r: Reader, v: unknown, p: string): Settings | null {
     }
     return x;
   });
-  return { alertThresholdPoints: r.num(o, "alertThresholdPoints", p, { min: 0, max: 100 }), holidays };
+  return { alertThresholdPoints: r.num(o, "alertThresholdPoints", p, { min: 0, max: 100, integer: true }), holidays };
 }
 
 /** 4章のルールのうち、ファイルの中だけで確かめられる整合性 */
