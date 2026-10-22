@@ -529,6 +529,7 @@ export function checkIntegrity(s: AppState): string[] {
     }
   });
   const nodeById = new Map(s.wbsNodes.map((n) => [n.id, n]));
+  const latestBaselineId = [...s.baselines].sort((a, b) => b.version - a.version)[0]?.id ?? null;
   // 見積はWP 1件につき1件まで、WPだけに付ける（合計やベースラインの計画工数で、どの見積を使うかを1つに決めるため）
   const estimatedNodes = new Set<string>();
   s.estimates.forEach((e, i) => {
@@ -554,7 +555,8 @@ export function checkIntegrity(s: AppState): string[] {
     if (b.plannedHours <= 0) errors.push(`baselineItems[${i}]：計画工数が0です`);
     const node = nodeById.get(b.wbsNodeId);
     if (node && node.kind !== "work_package") errors.push(`baselineItems[${i}]：phase は明細にできません`);
-    if (node && node.excluded) errors.push(`baselineItems[${i}]：対象外のWPは明細にできません`);
+    // 過去の版の明細は凍結した記録なので、改版で外したWP（今は対象外）を含んでいてよい。最新の版には対象外のWPを入れない
+    if (node && node.excluded && b.baselineId === latestBaselineId) errors.push(`baselineItems[${i}]：対象外のWPは明細にできません`);
     const pair = `${b.baselineId}\u0000${b.wbsNodeId}`;
     if (itemPairs.has(pair)) errors.push(`baselineItems[${i}]：同じ版に同じWBS要素の明細が重複しています`);
     itemPairs.add(pair);
@@ -584,6 +586,7 @@ export function checkIntegrity(s: AppState): string[] {
       if (n.category !== REQUIRED_WP_CATEGORY[n.requiredKey]) errors.push(`wbsNodes[${i}]：必須WPの作業区分が正しくありません`);
     }
     if (n.excluded && n.excludedReason.trim() === "") errors.push(`wbsNodes[${i}]：対象外の理由がありません`);
+    if (n.requiredKey !== null && n.name.trim() === "") errors.push(`wbsNodes[${i}]：必須WPの作業名がありません`);
     if (n.parentId !== null && nodeById.get(n.parentId)?.kind === "work_package") {
       errors.push(`wbsNodes[${i}]：WPの下に要素は置けません`);
     }
@@ -611,11 +614,16 @@ export function checkIntegrity(s: AppState): string[] {
     keys.add(t.uniqueKey);
   }
 
-  // ベースラインの版番号は1から連番
-  const versions = s.baselines.map((b) => b.version).sort((a, b) => a - b);
+  // ベースラインの版番号は1から連番。合意日は前の版より前にならない。企画の承認日は v1 の合意日
+  const ordered = [...s.baselines].sort((a, b) => a.version - b.version);
+  const versions = ordered.map((b) => b.version);
   if (versions.some((v, i) => v !== i + 1)) {
     errors.push(`baselines：版番号が1から連番になっていません（${versions.join(",")}）`);
   }
+  ordered.forEach((b, i) => {
+    if (i > 0 && b.approvedOn < ordered[i - 1].approvedOn) errors.push(`baselines：v${b.version}の合意日が前の版より前です`);
+  });
+  if (ordered[0] && s.proposal.approvedOn !== ordered[0].approvedOn) errors.push("proposal.approvedOn：ベースラインv1の合意日と違います");
   // 各版について：明細が1件以上ある。v1は確定（baseline.confirm）、v2以降は改版（baseline.revise）の監査ログがある。
   // v2以降は改版理由が要る。v1は G1+2 承認と同じ操作で確定するので、その版を指す承認の記録がある
   for (const b of s.baselines) {

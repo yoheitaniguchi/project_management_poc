@@ -120,13 +120,21 @@ describe("要素の追加・編集・削除", () => {
 });
 
 describe("要素の編集の守り", () => {
-  it("確定済みのベースラインに含まれるWPは、理由を付けて対象外にできない", () => {
+  it("最新のベースラインに含まれるWPは、理由を付けて対象外にできない（改版で外す）", () => {
     const r = validateState(fixtureRaw());
     if (!r.ok) throw new Error(r.errors.join());
     expect(setExcluded(r.state, "n2", true, "不要になった")).toEqual({
       ok: false,
-      error: "確定済みのベースラインに含まれるWPのため、対象外にできません",
+      error: "最新のベースラインに含まれるWPのため、ここでは対象外にできません。改版するときに外してください",
     });
+  });
+
+  it("必須WPの作業名は空にできない（名前の変更はできる）", () => {
+    const { s } = expanded();
+    const req = s.wbsNodes.find((n) => n.requiredKey === "threat_analysis");
+    if (!req) throw new Error("必須WPがありません");
+    expect(updateNode(s, req.id, { name: "  " })).toEqual({ ok: false, error: "必須WPの作業名は空にできません" });
+    expect(okState(updateNode(s, req.id, { name: "脅威分析（STRIDE）" })).wbsNodes.find((n) => n.id === req.id)?.name).toBe("脅威分析（STRIDE）");
   });
 
   it("変えてよい項目以外は、渡されても変えない", () => {

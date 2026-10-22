@@ -1,4 +1,4 @@
-// G1+2承認パネル（CLAUDE.md 7.1）。承認はベースラインの確定と同じ操作なので、計画画面で行う（ここは表示のみ）。
+// G1+2承認パネル（CLAUDE.md 7.1）。承認はベースラインの確定と同じ操作なので、計画画面で行う（ここは記録の表示と差戻しの記録）。
 // 差戻しはここで記録する。取り消せない記録なので、入力が揃うまで押せず、確認してから記録する
 import { useState } from "react";
 import { recordGateReturn } from "../domain/proposal";
@@ -57,7 +57,7 @@ export function GateReviewPanel({ state, run, newId, onGoToPlan }: Props) {
         {latest === null ? "まだ承認されていません。" : `承認済み（ベースラインv${latest}まで確定）。`}
         承認はベースラインの確定と同じ操作です。{" "}
         <button type="button" className="link-button" onClick={onGoToPlan}>
-          計画画面へ（承認・確定は準備中）
+          計画画面で承認・確定する
         </button>
       </p>
 

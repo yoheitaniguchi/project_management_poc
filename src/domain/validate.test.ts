@@ -188,6 +188,36 @@ describe("validateState：WBS・見積・紐付けの規則（版2）", () => {
     expect(errorsOf((r) => list(r, "estimates").push({ ...list(r, "estimates")[0], id: "e2", wbsNodeId: "n1" }))).toMatch(/phase に見積/);
   });
 
+  /** v2（改版）を正しく足す */
+  const withV2 = (r: Record<string, unknown>, approvedOn = "2030-01-08") => {
+    list(r, "baselines").push({ ...list(r, "baselines")[0], id: "b2", version: 2, gate: "改版", approvedOn, revisionReason: "テスト用の改版" });
+    list(r, "baselineItems").push({ ...list(r, "baselineItems")[0], id: "bi2", baselineId: "b2" });
+    list(r, "auditLogs").push({ ...list(r, "auditLogs")[0], id: "a2", seq: 2, targetId: "b2", action: "baseline.revise" });
+  };
+
+  it("対象外のWPは、最新の版の明細には入れられないが、過去の版の明細には残ってよい（改版で外したWP）", () => {
+    expect(errorsOf((r) => withV2(r))).toBe("");
+    // v1 だけにある n3（対象外）：改版で外したWP
+    expect(errorsOf((r) => {
+      withV2(r);
+      list(r, "baselineItems").push({ ...list(r, "baselineItems")[0], id: "bi3", baselineId: "b1", wbsNodeId: "n3" });
+    })).toBe("");
+    // 最新の v2 に n3（対象外）
+    expect(errorsOf((r) => {
+      withV2(r);
+      list(r, "baselineItems").push({ ...list(r, "baselineItems")[0], id: "bi3", baselineId: "b2", wbsNodeId: "n3" });
+    })).toMatch(/対象外のWPは明細にできません/);
+  });
+
+  it("版の合意日が前の版より前、企画の承認日が v1 の合意日と違うデータを拒否する", () => {
+    expect(errorsOf((r) => withV2(r, "2030-01-06"))).toMatch(/v2の合意日が前の版より前/);
+    expect(errorsOf((r) => ((r.proposal as Record<string, unknown>).approvedOn = "2030-01-08"))).toMatch(/v1の合意日と違います/);
+  });
+
+  it("必須WPの作業名が空のデータを拒否する", () => {
+    expect(errorsOf((r) => Object.assign(node(r, "n3"), { requiredKey: "operation_design", name: " " }))).toMatch(/必須WPの作業名がありません/);
+  });
+
   it("紐付けの重複・phase への紐付けを拒否する", () => {
     expect(errorsOf((r) => list(r, "objectiveTraces").push({ ...list(r, "objectiveTraces")[0], id: "t2" }))).toMatch(/紐付けが重複/);
     expect(errorsOf((r) => list(r, "objectiveTraces").push({ ...list(r, "objectiveTraces")[0], id: "t2", wbsNodeId: "n1" }))).toMatch(

@@ -1,5 +1,5 @@
 // 計画画面（CLAUDE.md 7.2）：WBSの表、目的に紐付かないWPの強調、見積合計・見積基準の適用件数・未紐付けの件数。
-// ベースラインの確定は次の作業（PR-F）で追加する
+// ベースラインの確定・改版は BaselinePanel
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { REQUIRED_WP_CATEGORY, type AppState, type RequiredWpKey, type WbsNode, type WorkCategory } from "../domain/types";
 import {
@@ -8,6 +8,7 @@ import {
   applyStandard,
   compareCodes,
   expandTemplate,
+  inLatestBaseline,
   isUnlinked,
   planSummary,
   removalImpact,
@@ -23,6 +24,7 @@ import {
 } from "../domain/wbs";
 import type { OpResult } from "../domain/proposal";
 import { CATEGORY_LABELS } from "../labels";
+import { BaselinePanel } from "./BaselinePanel";
 import { Modal } from "./Modal";
 import type { Run } from "./ProposalPage";
 
@@ -45,7 +47,7 @@ const REQUIRED_WP_NAMES: Record<RequiredWpKey, string> = {
   operation_handover: "運用引継ぎ",
 };
 
-type ErrorPlace = "wbs" | "editor";
+type ErrorPlace = "wbs" | "editor" | "baseline";
 
 function PlaceError({ error, place }: { error: { place: ErrorPlace; message: string } | null; place: ErrorPlace }) {
   if (!error || error.place !== place) return null;
@@ -239,22 +241,7 @@ export function PlanPage({ state, run, newId, onGoToProposal }: Props) {
         />
       )}
 
-      <section aria-labelledby="sec-baseline">
-        <h2 id="sec-baseline">ベースライン</h2>
-        {state.baselines.length === 0 ? (
-          <p>まだ確定していません（G1+2承認によるベースラインの確定は準備中です）。</p>
-        ) : (
-          <ul>
-            {[...state.baselines]
-              .sort((a, b) => a.version - b.version)
-              .map((b) => (
-                <li key={b.id}>
-                  v{b.version}：承認日 {b.approvedOn}、承認者 {b.approver}（自己申告）{b.revisionReason ? `、改版理由 ${b.revisionReason}` : ""}
-                </li>
-              ))}
-          </ul>
-        )}
-      </section>
+      <BaselinePanel state={state} exec={(op) => exec("baseline", op)} newId={newId} error={<PlaceError error={error} place="baseline" />} />
 
       {removingNode && (
         <RemoveDialog
@@ -317,7 +304,7 @@ function NodeEditor({ state, node, exec, error, newId, onAddWp, onRemove }: Edit
   const [quantity, setQuantity] = useState("1");
   const [confirmingStandard, setConfirmingStandard] = useState(false);
   const impact = removalImpact(state, node.id);
-  const inBaseline = state.baselineItems.some((b) => b.wbsNodeId === node.id);
+  const inBaseline = inLatestBaseline(state, node.id);
   const standard = state.estimationStandards.find((s) => s.id === standardId);
   const doApply = () => exec((s) => applyStandard(s, node.id, standardId, Number(quantity), newId));
   const result = standard ? standardResult(standard, Number(quantity)) : null;
@@ -493,7 +480,7 @@ function NodeEditor({ state, node, exec, error, newId, onAddWp, onRemove }: Edit
               </button>
               {inBaseline ? (
                 <span id="exclude-hint" className="hint">
-                  確定済みのベースラインに含まれるWPのため、対象外にできません。
+                  最新のベースラインに含まれるWPのため、ここでは対象外にできません。外すときは、下の「改版する」で理由を付けて外します。
                 </span>
               ) : (
                 excludeReason.trim() === "" && (

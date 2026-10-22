@@ -166,6 +166,7 @@ export function updateNode(state: AppState, id: string, rawPatch: NodePatch): Op
     if (state.wbsNodes.some((n) => n.id !== id && n.code === patch.code)) return fail(`WBSコード「${patch.code}」はすでに使われています`);
   }
   if (patch.name !== undefined && typeof patch.name !== "string") return fail("作業名の値が正しくありません");
+  if (node.requiredKey !== null && patch.name !== undefined && patch.name.trim() === "") return fail("必須WPの作業名は空にできません");
   if (tooLong(patch.code ?? "", patch.name ?? "")) return fail("文字数が多すぎます");
   if (patch.category !== undefined && !CATEGORIES.includes(patch.category)) return fail("作業区分の値が正しくありません");
   if (node.requiredKey !== null && patch.category !== undefined && patch.category !== node.category) {
@@ -184,20 +185,26 @@ export function updateNode(state: AppState, id: string, rawPatch: NodePatch): Op
 
 /**
  * WPを対象外にする／戻す（本番リリースの無い案件など）。対象外にするには理由が要る。
- * 確定済みのベースラインに含まれるWPは対象外にできない（明細と食い違うため。改版での扱いはベースラインの確定と合わせて決める）
+ * 最新のベースラインに含まれるWPは、ここでは対象外にできない（最新の版の明細と食い違うため）。改版の操作で外す（baseline.ts）
  */
 export function setExcluded(state: AppState, id: string, excluded: boolean, reason: string): OpResult {
   const node = state.wbsNodes.find((n) => n.id === id);
   if (!node || !isWp(node)) return fail("WPが見つかりません");
   if (excluded && reason.trim() === "") return fail("対象外にする理由を入力してください");
-  if (excluded && state.baselineItems.some((b) => b.wbsNodeId === id)) {
-    return fail("確定済みのベースラインに含まれるWPのため、対象外にできません");
+  if (excluded && inLatestBaseline(state, id)) {
+    return fail("最新のベースラインに含まれるWPのため、ここでは対象外にできません。改版するときに外してください");
   }
   if (tooLong(reason)) return fail("文字数が多すぎます");
   return ok({
     ...state,
     wbsNodes: state.wbsNodes.map((n) => (n.id === id ? { ...n, excluded, excludedReason: excluded ? reason : "" } : n)),
   });
+}
+
+/** 最新の版（版番号が最大）の明細に含まれるか */
+export function inLatestBaseline(state: AppState, wbsNodeId: string): boolean {
+  const latest = state.baselines.reduce<{ id: string; version: number } | null>((a, b) => (a === null || b.version > a.version ? b : a), null);
+  return latest !== null && state.baselineItems.some((x) => x.baselineId === latest.id && x.wbsNodeId === wbsNodeId);
 }
 
 /** 要素とその子孫（訪問済みの集合で辿る） */
