@@ -32,6 +32,15 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # 本番の配信と同じ検査（ci.yml）に通ったものだけをプレビューにする
+      - name: lint
+        run: npm run lint
+      - name: 型チェック
+        run: npm run typecheck
+      - name: 単体テスト（@security を含む全件）
+        run: npm test
+      - name: 本番依存の脆弱性（high/critical は失敗）
+        run: npm audit --omit=dev --audit-level=high
       - name: プレビュー用のパスでビルド
         run: npm run build
         env:

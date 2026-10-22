@@ -27,7 +27,10 @@ npm run preview        # 本番ビルドの動作確認
 
 `.github/workflows/pr-preview.yml` が、PRごとのプレビューを `gh-pages` ブランチの `pr-preview/pr-<番号>/` に配信し、PRにURLをコメントする。PRを閉じると消す。
 プレビューのデータは本番と別の名前空間（`project_management_poc-pr-preview-<番号>:`）に保存し、本番の保存データは読み書きしない。
-このリポジトリのブランチからのPRだけが対象で、Dependabot のPRにはプレビューを作らない。
+このリポジトリのブランチからのPRだけが対象で、Dependabot のPRにはプレビューを作らない。プレビューはCIと同じ検査（lint・型チェック・単体テスト・本番依存の脆弱性）に通ったものだけを配信する。
+
+本番の配信は、プレビューを消さないよう `gh-pages` の既存のファイルを残す（`keep_files: true`）。誤って配信してはいけないファイルを一度配信した場合は、次の配信では消えないので、`gh-pages` ブランチから手で削除する。
+プレビューは本番と同じオリジンで開くため、プレビューのコードは技術的には本番の保存データを読める（保存先を分けているのはアプリの約束事）。PRを作れるのはこのリポジトリに書き込める人だけなので、このリスクは受け入れる（CR-003）。
 
 初回だけ、リポジトリの設定で次を行う。
 1. Settings → Pages → Build and deployment の Source を「Deploy from a branch」、ブランチを `gh-pages` / `(root)` にする（`gh-pages` は最初の配信で作られる）

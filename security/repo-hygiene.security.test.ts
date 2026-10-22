@@ -48,6 +48,11 @@ describe("[@security] 外部通信の禁止（B）", () => {
 
 describe("[@security] CIの権限（F）", () => {
   const dir = join(root, ".github", "workflows");
+  // ワークフロー × ジョブ → 認める書き込み権限（これ以外のジョブ・範囲は認めない）
+  const WRITE_SCOPES: Record<string, Record<string, string[]>> = {
+    "ci.yml": { deploy: ["contents"] },
+    "pr-preview.yml": { preview: ["contents", "pull-requests"] },
+  };
   const workflows = readdirSync(dir).filter((f) => /\.ya?ml$/.test(f));
 
   it("[@security] ワークフローが1つ以上ある", () => {
@@ -71,22 +76,36 @@ describe("[@security] CIの権限（F）", () => {
       expect(unpinned).toEqual([]);
     });
 
-    it(`[@security] ${file}：書き込み権限は配信のジョブ（deploy・preview）だけで、そのジョブは npm を実行しない`, () => {
-      // ジョブ単位に分け、配信のジョブ以外に write 権限が無いことを確かめる。
-      // 配信のジョブはビルド済みの成果物を受け取るだけにし、依存パッケージのスクリプトに書き込みの権限を渡さない
-      const jobsPart = text.split(/^jobs:\n/m)[1] ?? "";
-      const jobs = jobsPart.split(/^ {2}(?=[a-z][\w-]*:\n)/m).filter(Boolean);
+    // コメントを除いた本文（コメントに書いた文字列で検査を満たせないようにする）
+    const code = text
+      .split("\n")
+      .map((l) => l.replace(/(^|\s)#.*$/, ""))
+      .join("\n");
+    const jobsPart = code.split(/^jobs:\n/m)[1] ?? "";
+    const jobs = jobsPart.split(/^ {2}(?=[a-z][\w-]*:\n)/m).filter(Boolean);
+
+    it(`[@security] ${file}：書き込み権限は決めた配信のジョブに、決めた範囲だけ。そのジョブはコマンドを実行しない`, () => {
+      // 配信のジョブはビルド済みの成果物を受け取って配信するだけにし、依存パッケージのスクリプトやPRのコードに書き込みの権限を渡さない
       for (const job of jobs) {
         const name = job.split(":")[0];
-        if (!["deploy", "preview"].includes(name)) {
-          expect(job, `${name} ジョブに書き込み権限がある`).not.toMatch(/:\s*write/);
-        } else if (/:\s*write/.test(job)) {
-          expect(job, `${name} ジョブが書き込み権限を持ったまま npm を実行している`).not.toMatch(/\bnpm\b|\bnpx\b/);
+        const writes = [...job.matchAll(/^\s+([a-z-]+):\s*write\s*$/gm)].map((m) => m[1]).sort();
+        expect(writes, `${name} ジョブの書き込み権限`).toEqual(WRITE_SCOPES[file]?.[name] ?? []);
+        if (writes.length > 0) {
+          expect(job, `${name} ジョブが書き込み権限を持ったままコマンドを実行している`).not.toMatch(/^\s+(-\s+)?run:/m);
           const checkouts = job.match(/uses:\s*actions\/checkout@/g)?.length ?? 0;
-          const noCredentials = job.match(/persist-credentials: false/g)?.length ?? 0;
+          const noCredentials = job.match(/^\s+persist-credentials:\s*false\s*$/gm)?.length ?? 0;
           expect(noCredentials, `${name} ジョブで checkout が認証情報を残している`).toBeGreaterThanOrEqual(checkouts);
         }
       }
     });
+
+    if (file === "pr-preview.yml") {
+      it(`[@security] ${file}：どのジョブも、このリポジトリのブランチからのPRだけを対象にし、Dependabot のPRを除く`, () => {
+        for (const job of jobs) {
+          expect(job).toContain("github.event.pull_request.head.repo.full_name == github.repository");
+          expect(job).toContain("github.event.pull_request.user.login != 'dependabot[bot]'");
+        }
+      });
+    }
   }
 });

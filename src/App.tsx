@@ -104,7 +104,7 @@ export default function App() {
       {PREVIEW_PR !== null && (
         <p className="message--warn preview-banner" role="note">
           PR #{PREVIEW_PR} のプレビューです（確認用）。データは本番のページとは別の場所に保存され、本番のデータは読み書きしません。
-          実際の運用には本番のページを使ってください。
+          実データは入れず、実際の運用には本番のページを使ってください（プレビューの保存データは、PRを閉じた後も、このブラウザに残ります）。
         </p>
       )}
       <StorageBanner status={status} hasBackups={backups.length > 0} />
