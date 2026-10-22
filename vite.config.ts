@@ -30,10 +30,11 @@ function productionCsp(): Plugin {
 }
 
 // GitHub Pages（プロジェクトサイト）は https://<owner>.github.io/<repo>/ 配下で配信されるため、
-// build成果物とその動作確認（vite preview）ではアセットパスの先頭にリポジトリ名を付ける
+// build成果物とその動作確認（vite preview）ではアセットパスの先頭にリポジトリ名を付ける。
+// PRプレビューは /<repo>/pr-preview/pr-<番号>/ 配下に配信するので、CIが渡す BASE_PATH を優先する（.github/workflows/pr-preview.yml）
 export default defineConfig(({ command, isPreview }) => ({
   plugins: [react(), productionCsp()],
-  base: command === "build" || isPreview ? "/project_management_poc/" : "/",
+  base: process.env.BASE_PATH ?? (command === "build" || isPreview ? "/project_management_poc/" : "/"),
   // 開発サーバーを外部に公開しない（docs/security/checklist.md F）
   server: { host: "localhost" },
   preview: { host: "localhost" },

@@ -171,7 +171,8 @@ WPの状態は**基準日の時点で**判定する（スナップショット�
 - 言語：TypeScript
 - アプリ：React + Vite の1ページのアプリ。**バックエンドサーバーとDBは持たない**
 - 状態管理：`useReducer` で一元管理する。計算ロジック・データのルールは `src/domain/` に純粋な関数として分け、画面から切り離す
-- 配信：GitHub Pages（`main` へのpushを契機にGitHub Actionsでビルドして配信する）。リポジトリは公開とする
+- 配信：GitHub Pages（`main` へのpushを契機にGitHub Actionsでビルドし、`gh-pages` ブランチへ配信する）。リポジトリは公開とする
+  - PRごとのプレビューを `gh-pages` の `pr-preview/pr-<番号>/` に配信する（`docs/change-requests.md` CR-003）。プレビューは本番と別の名前空間に保存し、本番の保存データを読み書きしない
 - データの保存：
   - ブラウザのlocalStorageへ自動保存する（普段使いの保存先）。キーには名前空間（`project_management_poc:`）を付け、「このブラウザの保存データを消去」する操作を用意する
     - GitHub Pagesの `yoheitaniguchi.github.io` は姉妹リポジトリと同じオリジンのため、そのページからこの保存データを読み書きできる。PoCではこのリスクを受け入れる（人間の判断）

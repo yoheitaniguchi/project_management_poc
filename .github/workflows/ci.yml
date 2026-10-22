@@ -67,29 +67,35 @@ jobs:
       - run: npm ci
       - run: npm run build
       - name: ビルド成果物にデータファイルが無いことを確認
-        run: |
-          if find dist -type f \( -name '*.json' -o -name '*.csv' -o -name 'pmpoc-*' \) | grep .; then
-            echo "dist にデータファイルが含まれています" >&2
-            exit 1
-          fi
-      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        run: sh scripts/check-dist.sh
+      # 配信するのは、この（書き込み権限の無い）ジョブで作ったビルド成果物だけ
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         with:
+          name: dist
           path: dist
+          retention-days: 1
 
+  # gh-pages ブランチへ push する方式で配信する（PRプレビューの pr-preview/ 配下と共存させるため。
+  # actions/deploy-pages はサイト全体を毎回置き換えるので共存できない）。
+  # 書き込み権限を持つのはこのジョブだけで、npm は実行しない（依存パッケージのスクリプトに書き込みの権限を渡さない）
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [test, dependency-audit, secret-scan, build]
     runs-on: ubuntu-latest
     permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      contents: write
     concurrency:
-      group: pages
+      group: pages-main
       cancel-in-progress: false
     steps:
-      - id: deployment
-        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+      - uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.1.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          # PRプレビュー（pr-preview/ 配下）を本番の配信のたびに消さない。過去のビルドのファイルが残るが、PoCの規模では許容する
+          keep_files: true

@@ -2,10 +2,19 @@
 // - localStorage への自動保存（普段使い）。キーには名前空間を付ける
 // - JSONファイルの書き出し・読み込み（毎週の正式な記録）
 // ここは純粋な関数と、注入された Storage だけを使う（画面やブラウザの API に直接依存しない）。
+import { PREVIEW_PR } from "../buildInfo";
 import { CURRENT_SCHEMA_VERSION, type AppState } from "./types";
 import { findForbiddenKeys, LIMITS, STATE_KEYS, validateState } from "./validate";
 
-export const STORAGE_NAMESPACE = "project_management_poc:";
+/**
+ * 保存データのキーの名前空間。PRプレビューは本番と同じオリジンで開くため、本番の保存データを読み書きしないよう別の名前空間にする
+ * （本番の名前空間の接頭辞にならない名前にして、本番の「保存データを消去」でも消えないようにする）
+ */
+export function storageNamespace(previewPr: number | null): string {
+  return previewPr === null ? "project_management_poc:" : `project_management_poc-pr-preview-${previewPr}:`;
+}
+
+export const STORAGE_NAMESPACE = storageNamespace(PREVIEW_PR);
 export const STORAGE_KEY = `${STORAGE_NAMESPACE}v1:state`;
 const CORRUPT_BACKUP_PREFIX = `${STORAGE_NAMESPACE}corrupt-backup:`;
 
