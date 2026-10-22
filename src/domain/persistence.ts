@@ -46,6 +46,20 @@ const MIGRATIONS: Record<number, Migration> = {
     if (Array.isArray(raw.wbsNodes)) out.wbsNodes = raw.wbsNodes.map((n: unknown, i: number) => migrateV1WbsNode(n, i));
     return out;
   },
+  // 版2 → 3：週次スナップショットに、作成時のずれ・閾値・要対応（gapPoints・thresholdPoints・alert）を追加した。
+  // 版2の画面にはスナップショットを作る操作が無く、作成時の閾値も分からないため、スナップショットのある版2のデータは移行せずに拒否する
+  2: (raw) => {
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(raw)) {
+      if (!(STATE_KEYS as readonly string[]).includes(k)) throw new MigrationError(`版2のデータに知らない項目「${k}」があります`);
+      out[k] = raw[k];
+    }
+    if (Array.isArray(raw.evmSnapshots) && raw.evmSnapshots.length > 0) {
+      throw new MigrationError("版2のデータに週次スナップショットがあります（版2では作れないため、移行しません）");
+    }
+    out.schemaVersion = 3;
+    return out;
+  },
 };
 
 const V1_WBS_NODE_KEYS = [

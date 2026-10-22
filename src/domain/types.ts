@@ -3,7 +3,7 @@
 import { DEFAULT_ALERT_THRESHOLD_POINTS, DEFAULT_HOLIDAYS } from "../config/holidays";
 
 /** 状態全体のスキーマの版。型を変えたら上げ、persistence.ts に移行関数を足す */
-export const CURRENT_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEMA_VERSION = 3;
 
 /**
  * WBSテンプレートの必須WP（CLAUDE.md 3.3）。見積漏れを防ぐため、テンプレートから展開したこれらのWPは削除できない
@@ -196,6 +196,12 @@ export interface EvmSnapshot {
   eac: number | null;
   consumptionRate: number | null;
   progressRate: number | null;
+  /** 工数消化率 − 進捗率（整数のポイント）。BAC が0なら null */
+  gapPoints: number | null;
+  /** 作成したときの要対応の閾値（ポイント）。閾値を後で変えても、記録した週の要対応は変わらない（5章：作成後は変更しない） */
+  thresholdPoints: number;
+  /** 要対応（ずれが閾値を超えた） */
+  alert: boolean;
   createdAt: string;
 }
 
