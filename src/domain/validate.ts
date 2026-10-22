@@ -595,6 +595,7 @@ export function checkIntegrity(s: AppState): string[] {
   });
   s.timeEntries.forEach((t, i) => {
     ref(`timeEntries[${i}].wbsNodeId`, t.wbsNodeId, nodeIds, "WBS要素");
+    if (nodeById.get(t.wbsNodeId)?.kind === "phase") errors.push(`timeEntries[${i}]：phase に実績は付けられません`);
     ref(`timeEntries[${i}].memberId`, t.memberId, memberIds, "メンバー");
   });
   s.evmSnapshots.forEach((e, i) => ref(`evmSnapshots[${i}].baselineId`, e.baselineId, baselineIds, "ベースライン"));
