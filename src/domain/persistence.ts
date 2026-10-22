@@ -211,26 +211,7 @@ const same = (a: unknown, b: unknown) => canonical(a) === canonical(b);
  * あわせて、実績やWBSなどの件数が減る場合も「置き換え」として理由に出す（黙って消さない）
  */
 export function compareForImport(current: AppState, incoming: AppState): ImportComparison {
-  const reasons: string[] = [];
-  const prefixOf = <T>(label: string, cur: T[], inc: T[]) => {
-    if (inc.length < cur.length) {
-      reasons.push(`${label}が${cur.length - inc.length}件少なくなります`);
-      return;
-    }
-    if (!cur.every((x, i) => same(x, inc[i]))) reasons.push(`${label}の内容が現在のデータと違います`);
-  };
-  prefixOf("確定済みのベースライン", current.baselines, incoming.baselines);
-  prefixOf("G1+2承認・差戻しの記録", current.gateReviews, incoming.gateReviews);
-  prefixOf("監査ログ", current.auditLogs, incoming.auditLogs);
-  prefixOf("週次スナップショット", current.evmSnapshots, incoming.evmSnapshots);
-
-  // 既存の版の明細は、増えも減りも変わりもしない（明細を足してよいのは新しい版だけ）
-  for (const b of current.baselines) {
-    const cur = current.baselineItems.filter((x) => x.baselineId === b.id).map(canonical).sort();
-    const inc = incoming.baselineItems.filter((x) => x.baselineId === b.id).map(canonical).sort();
-    if (!same(cur, inc)) reasons.push(`ベースラインv${b.version}の明細が現在のデータと違います`);
-  }
-
+  const reasons = [...frozenRecordChanges(current, incoming)];
   const shrinks: [string, number, number][] = [
     ["目的", current.objectives.length, incoming.objectives.length],
     ["WBS要素", current.wbsNodes.length, incoming.wbsNodes.length],
@@ -242,4 +223,37 @@ export function compareForImport(current: AppState, incoming: AppState): ImportC
     if (inc < cur) reasons.push(`${label}が${cur - inc}件少なくなります`);
   }
   return reasons.length === 0 ? { kind: "appendOnly" } : { kind: "replaces", reasons };
+}
+
+/**
+ * 確定済みの記録（ベースライン・明細・承認と差戻しの記録・監査ログ・スナップショット）が、
+ * 追記以外の形で変わっていないかを確かめ、変わっていればその理由を返す（CLAUDE.md 4章）。
+ * 読み込み時の比較と、画面の操作で状態を変えるとき（reducer の commit）の両方で使う
+ */
+export function frozenRecordChanges(current: AppState, next: AppState): string[] {
+  const reasons: string[] = [];
+  const prefixOf = <T>(label: string, cur: T[], inc: T[]) => {
+    if (inc.length < cur.length) {
+      reasons.push(`${label}が${cur.length - inc.length}件少なくなります`);
+      return;
+    }
+    if (!cur.every((x, i) => same(x, inc[i]))) reasons.push(`${label}の内容が現在のデータと違います`);
+  };
+  prefixOf("確定済みのベースライン", current.baselines, next.baselines);
+  prefixOf("G1+2承認・差戻しの記録", current.gateReviews, next.gateReviews);
+  prefixOf("監査ログ", current.auditLogs, next.auditLogs);
+  prefixOf("週次スナップショット", current.evmSnapshots, next.evmSnapshots);
+
+  // v1 の確定（＝G1+2承認）の後は、企画の承認の状態と承認日を変えない
+  if (current.baselines.length > 0 && (current.proposal.status !== next.proposal.status || current.proposal.approvedOn !== next.proposal.approvedOn)) {
+    reasons.push("G1+2承認の状態・承認日が現在のデータと違います");
+  }
+
+  // 既存の版の明細は、増えも減りも変わりもしない（明細を足してよいのは新しい版だけ）
+  for (const b of current.baselines) {
+    const cur = current.baselineItems.filter((x) => x.baselineId === b.id).map(canonical).sort();
+    const inc = next.baselineItems.filter((x) => x.baselineId === b.id).map(canonical).sort();
+    if (!same(cur, inc)) reasons.push(`ベースラインv${b.version}の明細が現在のデータと違います`);
+  }
+  return reasons;
 }

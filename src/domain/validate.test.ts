@@ -61,6 +61,30 @@ describe("validateState：整合性（4章のルール）", () => {
     expect(errorsOf((r) => ((r.proposal as Record<string, unknown>).approvedOn = null))).toMatch(/承認済みなのに承認日がありません/);
   });
 
+  it("承認（v1）と企画の状態が食い違うと拒否する", () => {
+    expect(errorsOf((r) => ((r.proposal as Record<string, unknown>).status = "draft"))).toMatch(/v1があるのに承認済みになっていません/);
+    expect(
+      errorsOf((r) => {
+        r.baselines = [];
+        r.baselineItems = [];
+        r.gateReviews = [];
+        r.auditLogs = [];
+      }),
+    ).toMatch(/ベースラインが無いのに承認済み/);
+  });
+
+  it("体制の食い違い（PMが2名・PMの不一致・体制の記録の欠け・重複）を拒否する", () => {
+    expect(errorsOf((r) => list(r, "projectMembers").push({ id: "pm2", memberId: "m1", role: "member" }))).toMatch(/体制の記録が重複/);
+    expect(errorsOf((r) => (r.projectMembers = []))).toMatch(/体制（役割）の記録がありません/);
+    expect(errorsOf((r) => ((r.project as Record<string, unknown>).pmMemberId = null))).toMatch(/役割がPMのメンバーと一致しません/);
+    expect(
+      errorsOf((r) => {
+        list(r, "members").push({ id: "m2", name: "x", affiliation: "internal", asanaUserGid: null });
+        list(r, "projectMembers").push({ id: "pm2", memberId: "m2", role: "pm" });
+      }),
+    ).toMatch(/PMが2名以上/);
+  });
+
   it("監査ログの連番が飛んでいると拒否する", () => {
     expect(errorsOf((r) => (list(r, "auditLogs")[0].seq = 2))).toMatch(/auditLogs\[0\]：連番が1ではありません/);
   });

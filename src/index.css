@@ -30,3 +30,190 @@ body {
   border-color: #9a6700;
   color: #3b2300;
 }
+
+/* ---- 共通ヘッダー・画面の切り替え（PR-D） ---- */
+button {
+  font: inherit;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  padding: 2px 4px;
+  max-width: 100%;
+}
+
+.app-header {
+  border-bottom: 1px solid #d0d7de;
+  padding: 8px 16px;
+  background: #f6f8fa;
+}
+
+.app-header__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.app-header__title {
+  margin: 0;
+  font-weight: bold;
+}
+
+.app-header__menu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.app-header__objectives ul {
+  margin: 4px 0;
+  padding-left: 1.2em;
+}
+
+.app-header__status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 4px 0;
+}
+
+.app-header__status div {
+  display: flex;
+  gap: 4px;
+}
+
+.app-header__status dt::after {
+  content: "：";
+}
+
+.app-header__status dd {
+  margin: 0;
+}
+
+.app-header__reminder,
+.message--warn {
+  background: #fff8c5;
+  border: 1px solid #9a6700;
+  color: #3b2300;
+  padding: 4px 8px;
+}
+
+.status--error,
+.message--error {
+  color: #82071e;
+}
+
+.message--error {
+  background: #ffebe9;
+  border: 1px solid #cf222e;
+  padding: 4px 8px;
+}
+
+.message--info {
+  max-width: 1080px;
+  margin: 8px auto;
+  padding: 4px 16px;
+  background: #ddf4ff;
+  border: 1px solid #54aeff;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 16px 0;
+  border-bottom: 1px solid #d0d7de;
+}
+
+.tabs__tab[aria-current="page"] {
+  font-weight: bold;
+  border-bottom: 3px solid #0969da;
+}
+
+.page section {
+  margin-bottom: 24px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 12px;
+  align-items: start;
+}
+
+table {
+  border-collapse: collapse;
+  margin: 8px 0;
+  display: block;
+  overflow-x: auto;
+}
+
+th,
+td {
+  border: 1px solid #d0d7de;
+  padding: 4px 6px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.hint {
+  color: #57606a;
+  font-size: 0.9em;
+}
+
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #0969da;
+  text-decoration: underline;
+}
+
+.button--primary {
+  background: #1f883d;
+  color: #fff;
+  border: 1px solid #1a7f37;
+}
+
+.button--primary:disabled {
+  background: #8c959f;
+  border-color: #8c959f;
+}
+
+.button--danger {
+  color: #82071e;
+  border: 1px solid #cf222e;
+}
+
+.onboarding {
+  border: 1px solid #54aeff;
+  padding: 8px 16px;
+  margin-bottom: 16px;
+}
+
+.modal {
+  max-width: min(720px, calc(100vw - 32px));
+}
+
+.modal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+@media (max-width: 600px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+}
