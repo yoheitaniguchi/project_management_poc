@@ -217,3 +217,79 @@ td {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---- 計画画面（PR-E） ---- */
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin: 4px 0;
+}
+
+.summary div {
+  display: flex;
+  gap: 4px;
+}
+
+.summary dt::after {
+  content: "：";
+}
+
+.summary dd {
+  margin: 0;
+  font-weight: bold;
+}
+
+.wbs-row--phase {
+  background: #f6f8fa;
+  font-weight: bold;
+}
+
+/* 目的に紐付かないWP：色に加えて「未紐付け」の文字でも示す */
+.wbs-row--unlinked {
+  background: #fff8c5;
+}
+
+.wbs-row--unlinked .wbs-status {
+  color: #82071e;
+  font-weight: bold;
+}
+
+.wbs-row--excluded {
+  color: #57606a;
+}
+
+.wbs-row--selected {
+  outline: 2px solid #0969da;
+}
+
+.badge {
+  margin-left: 6px;
+  padding: 0 6px;
+  border: 1px solid #57606a;
+  border-radius: 8px;
+  font-size: 0.8em;
+}
+
+.editor {
+  border: 1px solid #0969da;
+  padding: 8px 16px;
+}
+
+.editor__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.trace-list {
+  list-style: none;
+  padding: 0;
+}
+
+.trace-contribution {
+  display: block;
+  margin-left: 2em;
+}

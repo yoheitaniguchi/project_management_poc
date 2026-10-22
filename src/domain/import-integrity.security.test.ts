@@ -106,7 +106,7 @@ describe("[@security] SEC-004 危険なキーは移行（migrate）の前に拒�
   });
 
   it("[@security] 移行が必要な版（現在の版が2のとき）でも、移行より先に「使えない項目名」で拒否される", async () => {
-    // 現在の版を2に差し替え、版1のデータが migrate を通る状況を再現する（移行関数は未登録）
+    // 版1のデータが migrate を通る状況を再現する（版1→2の移行関数より先に、危険な項目名で拒否されることを確かめる）
     vi.resetModules();
     vi.doMock("./types", async (importOriginal) => ({ ...(await importOriginal<object>()), CURRENT_SCHEMA_VERSION: 2 }));
     const mod = await import("./persistence");

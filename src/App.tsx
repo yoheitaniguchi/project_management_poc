@@ -1,9 +1,10 @@
 // 画面の本体。3画面の切り替えと、保存・読み込みの操作をまとめる。
 // 状態を変える処理は src/domain/ のドメイン関数に任せ、ここは reducer に渡すだけにする
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AppHeader } from "./components/AppHeader";
 import { ImportDialog } from "./components/ImportDialog";
 import { Modal } from "./components/Modal";
+import { PlanPage } from "./components/PlanPage";
 import { ProposalPage, type Run } from "./components/ProposalPage";
 import { StorageBanner } from "./components/StorageBanner";
 import { exportFileName, serializeState } from "./domain/persistence";
@@ -31,6 +32,15 @@ export default function App() {
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const readOnly = status.changedInOtherTab;
+  // 画面を切り替えたら、その画面の見出しへフォーカスを移す（押したボタンが消えてフォーカスが行方不明にならないように）
+  const firstRender = useRef(true);
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    document.querySelector<HTMLElement>("main h1")?.focus();
+  }, [tab]);
   const autosaveStopped = status.unavailable || (status.corrupt !== null && !status.recovered) || readOnly;
 
   /** 画面の操作を反映する。反映できなかったら理由を返す（成功と表示させない） */
@@ -131,12 +141,7 @@ export default function App() {
 
       <main className="app">
         {tab === "proposal" && <ProposalPage state={state} run={run} newId={newId} onGoToPlan={() => setTab("plan")} onboarding={onboarding} />}
-        {tab === "plan" && (
-          <div className="page">
-            <h1 tabIndex={-1}>計画</h1>
-            <p>準備中です。WBS・目的の紐付け・見積と、G1+2承認によるベースラインの確定は、次の作業（PR-E・PR-F）で追加します。</p>
-          </div>
-        )}
+        {tab === "plan" && <PlanPage state={state} run={run} newId={newId} onGoToProposal={() => setTab("proposal")} />}
         {tab === "monitor" && (
           <div className="page">
             <h1 tabIndex={-1}>週次監視</h1>

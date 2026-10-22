@@ -15,7 +15,7 @@ import {
 } from "./persistence";
 import { FakeStorage } from "./fakeStorage";
 import { fixtureText } from "./testState";
-import { createInitialState, type AppState } from "./types";
+import { createInitialState, CURRENT_SCHEMA_VERSION, type AppState } from "./types";
 
 const fixtureState = (): AppState => {
   const r = parseStateText(fixtureText());
@@ -50,7 +50,7 @@ describe("JSONの書き出しと読み込み", () => {
 });
 
 describe("版の移行", () => {
-  // 今は版1だけなので、移行先の版を引数で与えて仕組みを確かめる
+  // 移行の仕組みそのものを、架空の移行関数と移行先の版を引数で与えて確かめる（実際の版1→2の移行は下の別のテスト）
   const migrations = {
     1: (r: Record<string, unknown>) => ({ ...r, schemaVersion: 2, added: "v2" }),
     2: (r: Record<string, unknown>) => ({ ...r, schemaVersion: 3 }),
@@ -61,7 +61,28 @@ describe("版の移行", () => {
   });
 
   it("今の版のデータはそのまま通す", () => {
-    expect(migrate({ schemaVersion: 1 })).toEqual({ ok: true, value: { schemaVersion: 1 } });
+    expect(migrate({ schemaVersion: CURRENT_SCHEMA_VERSION })).toEqual({ ok: true, value: { schemaVersion: CURRENT_SCHEMA_VERSION } });
+  });
+
+  it("版1 → 2：WBS要素に requiredKey: null を足す（1週目の形のJSONが読める）", () => {
+    const r = migrate({ schemaVersion: 1, wbsNodes: [{ id: "n1" }] });
+    expect(r).toEqual({ ok: true, value: { schemaVersion: 2, wbsNodes: [{ id: "n1", requiredKey: null }] } });
+    const parsed = parseStateText(fixtureText());
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) expect(parsed.state.wbsNodes.every((n) => n.requiredKey === null)).toBe(true);
+  });
+
+  it("版1 → 2：知らない項目や、版1には無いはずの requiredKey があれば、上書きせずに拒否する", () => {
+    expect(migrate({ schemaVersion: 1, wbsNodes: [{ id: "n1", requiredKey: "threat_analysis" }] })).toEqual({
+      ok: false,
+      error: "版1のwbsNodes[0]に知らない項目「requiredKey」があります",
+    });
+    expect(migrate({ schemaVersion: 1, wbsNodes: [{ id: "n1", extra: 1 }] })).toMatchObject({ ok: false });
+    expect(migrate({ schemaVersion: 1, extra: 1 })).toEqual({ ok: false, error: "版1のデータに知らない項目「extra」があります" });
+    const text = JSON.parse(fixtureText()) as { wbsNodes: Record<string, unknown>[] };
+    text.wbsNodes[0].requiredKey = null;
+    const parsed = parseStateText(JSON.stringify(text));
+    expect(parsed.ok).toBe(false);
   });
 
   it("移行の方法が無い版は、理由を付けて拒否する", () => {
@@ -75,7 +96,7 @@ describe("版の移行", () => {
   });
 
   it("新しい版のデータは、アプリの更新を促して拒否する", () => {
-    const result = migrate({ schemaVersion: 2 });
+    const result = migrate({ schemaVersion: CURRENT_SCHEMA_VERSION + 1 });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/新しい版/);
   });
