@@ -96,7 +96,7 @@ describe("validateState：整合性（4章のルール）", () => {
     expect(errorsOf((r) => ((r.project as Record<string, unknown>).pmMemberId = "nope"))).toMatch(/project\.pmMemberId：存在しない/);
     const snapshot = {
       id: "s1", baselineId: "nope", asOf: "2030-01-11", pv: 0, ev: 0, ac: 0, bac: 10,
-      cpi: null, spi: null, eac: null, consumptionRate: 0, progressRate: 0, createdAt: "2030-01-11T09:00:00.000Z",
+      cpi: null, spi: null, eac: null, consumptionRate: 0, progressRate: 0, gapPoints: 0, thresholdPoints: 5, alert: false, createdAt: "2030-01-11T09:00:00.000Z",
     };
     expect(errorsOf((r) => (r.evmSnapshots = [snapshot]))).toMatch(/evmSnapshots\[0\]\.baselineId：存在しない/);
     const entry = { id: "te1", wbsNodeId: "nope", memberId: null, workDate: "2030-01-08", minutes: 60, source: "manual_csv", uniqueKey: "k1" };

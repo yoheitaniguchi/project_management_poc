@@ -68,7 +68,7 @@ describe("版の移行", () => {
   });
 
   it("版1 → 2：WBS要素に requiredKey: null を足す（1週目の形のJSONが読める）", () => {
-    const r = migrate({ schemaVersion: 1, wbsNodes: [{ id: "n1" }] });
+    const r = migrate({ schemaVersion: 1, wbsNodes: [{ id: "n1" }] }, undefined, 2);
     expect(r).toEqual({ ok: true, value: { schemaVersion: 2, wbsNodes: [{ id: "n1", requiredKey: null }] } });
     const parsed = parseStateText(fixtureText());
     expect(parsed.ok).toBe(true);
@@ -196,7 +196,7 @@ describe("読み込み時の比較（追記のみ）", () => {
     const withSnapshot = structuredClone(current);
     withSnapshot.evmSnapshots = [{
       id: "s1", baselineId: "b1", asOf: "2030-01-11", pv: 10, ev: 5, ac: 4, bac: 10,
-      cpi: 1.25, spi: 0.5, eac: 8, consumptionRate: 0.4, progressRate: 0.5, createdAt: "2030-01-11T09:00:00.000Z",
+      cpi: 1.25, spi: 0.5, eac: 8, consumptionRate: 0.4, progressRate: 0.5, gapPoints: -10, thresholdPoints: 5, alert: false, createdAt: "2030-01-11T09:00:00.000Z",
     }];
     const result = compareForImport(withSnapshot, current);
     expect(result).toEqual({ kind: "replaces", reasons: ["週次スナップショットが1件少なくなります"] });

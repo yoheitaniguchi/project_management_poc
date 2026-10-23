@@ -223,7 +223,7 @@ describe("reducer の commit", () => {
     const current = fixtureState();
     current.evmSnapshots = [{
       id: "s1", baselineId: "b1", asOf: "2030-01-11", pv: 10, ev: 5, ac: 4, bac: 10,
-      cpi: 1.25, spi: 0.5, eac: 8, consumptionRate: 0.4, progressRate: 0.5, createdAt: "2030-01-11T09:00:00.000Z",
+      cpi: 1.25, spi: 0.5, eac: 8, consumptionRate: 0.4, progressRate: 0.5, gapPoints: -10, thresholdPoints: 5, alert: false, createdAt: "2030-01-11T09:00:00.000Z",
     }];
     const mutations: ((s: AppState) => void)[] = [
       (s) => (s.auditLogs[0].operator = "別の人"),

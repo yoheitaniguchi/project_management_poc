@@ -32,7 +32,7 @@ describe("exportReminder", () => {
     const s = fixture(); // 書き出しは 2030-01-11T08:05Z
     s.evmSnapshots = [{
       id: "s1", baselineId: "b1", asOf: "2030-01-11", pv: 10, ev: 5, ac: 4, bac: 10,
-      cpi: 1.25, spi: 0.5, eac: 8, consumptionRate: 0.4, progressRate: 0.5, createdAt: "2030-01-11T09:00:00.000Z",
+      cpi: 1.25, spi: 0.5, eac: 8, consumptionRate: 0.4, progressRate: 0.5, gapPoints: -10, thresholdPoints: 5, alert: false, createdAt: "2030-01-11T09:00:00.000Z",
     }];
     expect(exportReminder(s, new Date("2030-01-12T00:00:00.000Z"))).toEqual({ kind: "afterRecord", record: "週次スナップショット（2030-01-11）の作成" });
   });

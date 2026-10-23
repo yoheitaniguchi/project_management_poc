@@ -27,6 +27,7 @@ import {
   type WbsNode,
   latestBaselineOf,
 } from "./types";
+import { gapPoints, indicators, isAlert } from "./indicators";
 
 export const LIMITS = {
   /** 読み込むファイルの大きさの上限（バイト） */
@@ -45,6 +46,8 @@ export const LIMITS = {
   maxAuditPayloadLength: 2_000,
   /** 改版理由・改版で外す理由の長さの上限。監査ログに全文が収まるようにする */
   maxReasonLength: 500,
+  /** 週次スナップショットの工数（BAC・PV・EV・AC、時間）の上限。明細・実績の上限から決まる値より大きく、CSVに丸めて書ける大きさ */
+  maxSnapshotHours: 100_000_000,
   /** 計画日に使える年の範囲（極端な期間で営業日の計算が止まらないようにする） */
   planYearMin: 2000,
   planYearMax: 2099,
@@ -173,7 +176,7 @@ class Reader {
     return v;
   }
 
-  nullableNum(o: Rec, k: string, path: string, opts: { min?: number; max?: number } = {}): number | null {
+  nullableNum(o: Rec, k: string, path: string, opts: { min?: number; max?: number; integer?: boolean } = {}): number | null {
     return o[k] === null ? null : this.num(o, k, path, opts);
   }
 
@@ -407,22 +410,25 @@ function readTimeEntry(r: Reader, v: unknown, p: string): TimeEntry | null {
 function readSnapshot(r: Reader, v: unknown, p: string): EvmSnapshot | null {
   const o = r.record(v, p, [
     "id", "baselineId", "asOf", "pv", "ev", "ac", "bac", "cpi", "spi", "eac",
-    "consumptionRate", "progressRate", "createdAt",
+    "consumptionRate", "progressRate", "gapPoints", "thresholdPoints", "alert", "createdAt",
   ]);
   if (!o) return null;
   return {
     id: r.str(o, "id", p, { nonEmpty: true }),
     baselineId: r.str(o, "baselineId", p),
     asOf: r.date(o, "asOf", p),
-    pv: r.num(o, "pv", p, { min: 0 }),
-    ev: r.num(o, "ev", p, { min: 0 }),
-    ac: r.num(o, "ac", p, { min: 0 }),
-    bac: r.num(o, "bac", p, { min: 0 }),
+    pv: r.num(o, "pv", p, { min: 0, max: LIMITS.maxSnapshotHours }),
+    ev: r.num(o, "ev", p, { min: 0, max: LIMITS.maxSnapshotHours }),
+    ac: r.num(o, "ac", p, { min: 0, max: LIMITS.maxSnapshotHours }),
+    bac: r.num(o, "bac", p, { min: 0, max: LIMITS.maxSnapshotHours }),
     cpi: r.nullableNum(o, "cpi", p, { min: 0 }),
     spi: r.nullableNum(o, "spi", p, { min: 0 }),
     eac: r.nullableNum(o, "eac", p, { min: 0 }),
     consumptionRate: r.nullableNum(o, "consumptionRate", p, { min: 0 }),
     progressRate: r.nullableNum(o, "progressRate", p, { min: 0 }),
+    gapPoints: r.nullableNum(o, "gapPoints", p, { integer: true }),
+    thresholdPoints: r.num(o, "thresholdPoints", p, { min: 0, max: 100, integer: true }),
+    alert: r.bool(o, "alert", p),
     createdAt: r.dateTime(o, "createdAt", p),
   };
 }
@@ -611,6 +617,7 @@ export function checkIntegrity(s: AppState): string[] {
     ref(`timeEntries[${i}].memberId`, t.memberId, memberIds, "メンバー");
   });
   s.evmSnapshots.forEach((e, i) => ref(`evmSnapshots[${i}].baselineId`, e.baselineId, baselineIds, "ベースライン"));
+  errors.push(...snapshotErrors(s));
 
   // WBSコードは一意（実績のCSVはWBSコードでWPを指すため）。必須WPは種類ごとに1件、WPであること
   const codes = new Set<string>();
@@ -705,6 +712,57 @@ export function checkIntegrity(s: AppState): string[] {
     if (i > 0 && timeOf(a.at) < timeOf(s.auditLogs[i - 1].at)) errors.push(`auditLogs[${i}]：日時が前のログより前です`);
   });
 
+  return errors;
+}
+
+/** 値が同じか（記録した値と、記録した値から求め直した値の比較。浮動小数の誤差は許す） */
+const sameValue = (a: number | null, b: number | null) => (a === null || b === null ? a === b : Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a), Math.abs(b)));
+
+/**
+ * 週次スナップショットの整合性（5章・4章）。作成の操作（snapshot.ts の createSnapshot）が守る規則を、読み込み時にも確かめる。
+ * - 作成した時点で最新の版を基準にしている（4章：予実差異は常に最新の承認済みベースラインを基準に計算する）
+ * - 基準日は、その版の合意日以後で、作成日以前。作成日は端末の地域の日付で決めるため、UTCの日付に1日の幅を持たせて比べる
+ * - 基準日と版の組は1件まで。作成日時は前のスナップショットより前にならない（追記のみ）
+ * - 指標・ずれ・要対応は、記録した BAC・PV・EV・AC・閾値から求めた値と一致する（算出できない指標は null）
+ */
+function snapshotErrors(s: AppState): string[] {
+  const errors: string[] = [];
+  const pairs = new Set<string>();
+  const baselineById = new Map(s.baselines.map((b) => [b.id, b]));
+  // 版ごとの BAC（明細の計画工数の合計）と、その版より新しい版の確定のうち最も早い日時
+  const bacOf = new Map<string, number>();
+  for (const x of s.baselineItems) bacOf.set(x.baselineId, (bacOf.get(x.baselineId) ?? 0) + x.plannedHours);
+  const nextOperatedAt = new Map<string, number>();
+  for (const b of s.baselines) {
+    const later = s.baselines.filter((x) => x.version > b.version).map((x) => timeOf(x.operatedAt));
+    nextOperatedAt.set(b.id, later.length > 0 ? Math.min(...later) : Infinity);
+  }
+  s.evmSnapshots.forEach((e, i) => {
+    const path = `evmSnapshots[${i}]`;
+    const b = baselineById.get(e.baselineId);
+    if (b) {
+      const created = timeOf(e.createdAt);
+      if (timeOf(b.operatedAt) > created) errors.push(`${path}：基準にした版v${b.version}の確定より前に作成されています`);
+      if ((nextOperatedAt.get(b.id) ?? Infinity) <= created) errors.push(`${path}：作成した時点の最新の版を基準にしていません`);
+      if (e.asOf < b.approvedOn) errors.push(`${path}：基準日が版v${b.version}の合意日より前です`);
+      // BAC は変更できない明細から決まる。PV・EV は BAC を超えない（AC・EV は後の実績・完了で変わりうるので求め直さない）
+      if (!sameValue(e.bac, bacOf.get(b.id) ?? 0)) errors.push(`${path}：BAC が版v${b.version}の明細の計画工数の合計と合いません`);
+      if (e.pv > e.bac * (1 + 1e-9) || e.ev > e.bac * (1 + 1e-9)) errors.push(`${path}：PV・EV が BAC を超えています`);
+    }
+    const createdDay = Date.parse(`${e.createdAt.slice(0, 10)}T00:00:00Z`);
+    if (Date.parse(`${e.asOf}T00:00:00Z`) > createdDay + 24 * 60 * 60 * 1000) errors.push(`${path}：基準日が作成日より後です`);
+    const pair = `${e.baselineId}|${e.asOf}`;
+    if (pairs.has(pair)) errors.push(`${path}：同じ基準日・同じ版のスナップショットが重複しています`);
+    pairs.add(pair);
+    if (i > 0 && timeOf(e.createdAt) < timeOf(s.evmSnapshots[i - 1].createdAt)) errors.push(`${path}：作成日時が前のスナップショットより前です`);
+    const ind = indicators(e.bac, e.pv, e.ev, e.ac);
+    const gap = gapPoints(e.bac, e.ev, e.ac);
+    const consistent =
+      sameValue(e.cpi, ind.cpi) && sameValue(e.spi, ind.spi) && sameValue(e.eac, ind.eac) &&
+      sameValue(e.consumptionRate, ind.consumptionRate) && sameValue(e.progressRate, ind.progressRate) &&
+      e.gapPoints === gap && e.alert === isAlert(gap, e.thresholdPoints);
+    if (!consistent) errors.push(`${path}：指標・ずれ・要対応が BAC・PV・EV・AC・閾値と合いません`);
+  });
   return errors;
 }
 
