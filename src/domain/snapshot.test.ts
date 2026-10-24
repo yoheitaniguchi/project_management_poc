@@ -336,9 +336,9 @@ describe("snapshotCsv：現状値の採取のためのCSV", () => {
     const lines = snapshotCsv(next).split("\r\n");
     expect(lines[0]).toBe(SNAPSHOT_CSV_HEADER.join(","));
     // 10/26：実績0（CPI・EAC は空欄）、PV 2・EV 0・AC 0。ずれ 0
-    expect(lines[1]).toBe(`2026-10-26,v1,16,2,0,0,,0,,0,0,0,5,,${at(26).toISOString()}`);
+    expect(lines[1]).toBe(`2026-10-26,v1,16,2,0,0,,0,,0,0,0,5,,2026-10-26 18:00`);
     // 10/27：PV 4・EV 5・AC 10。CPI 0.5、SPI 1.25、EAC 32、消化率 62.5%、進捗率 31.3%、ずれ 31
-    expect(lines[2]).toBe(`2026-10-27,v1,16,4,5,10,0.5,1.25,32,62.5,31.3,31,5,要対応,${at(27).toISOString()}`);
+    expect(lines[2]).toBe(`2026-10-27,v1,16,4,5,10,0.5,1.25,32,62.5,31.3,31,5,要対応,2026-10-27 18:00`);
     expect(lines).toHaveLength(4); // 末尾の改行
   });
 
