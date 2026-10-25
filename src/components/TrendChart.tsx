@@ -12,10 +12,11 @@ const W = 640;
 const H = 260;
 const PAD = { left: 56, right: 48, top: 16, bottom: 48 };
 
+// 色はテーマ（ライト・ダーク）に合わせてCSSの変数で決める（CR-007）。SVGの属性では変数を使えないので style で指定する
 const SERIES = [
-  { key: "pv", label: "PV", color: "#1f5fa8", dash: undefined },
-  { key: "ev", label: "EV", color: "#2d7a3a", dash: "8 4" },
-  { key: "ac", label: "AC", color: "#b4461d", dash: "2 4" },
+  { key: "pv", label: "PV", color: "var(--chart-pv)", dash: undefined },
+  { key: "ev", label: "EV", color: "var(--chart-ev)", dash: "8 4" },
+  { key: "ac", label: "AC", color: "var(--chart-ac)", dash: "2 4" },
 ] as const;
 
 /** 目盛りの間隔（1・2・5 × 10^n） */
@@ -55,7 +56,7 @@ export function TrendChart({ points }: { points: TrendPoint[] }) {
     <svg className="trend-chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={summary}>
       {ticks.map((t) => (
         <g key={t}>
-          <line x1={PAD.left} x2={W - PAD.right} y1={y(t)} y2={y(t)} stroke="#ddd" />
+          <line x1={PAD.left} x2={W - PAD.right} y1={y(t)} y2={y(t)} className="trend-chart__grid" />
           <text x={PAD.left - 6} y={y(t) + 4} textAnchor="end" fontSize="11">
             {round(t)}
           </text>
@@ -72,7 +73,7 @@ export function TrendChart({ points }: { points: TrendPoint[] }) {
           {/* 版が変わった点に印を付ける */}
           {i > 0 && points[i - 1].version !== p.version && (
             <g>
-              <line x1={x(i)} x2={x(i)} y1={PAD.top} y2={PAD.top + innerH} stroke="#888" strokeDasharray="3 3" />
+              <line x1={x(i)} x2={x(i)} y1={PAD.top} y2={PAD.top + innerH} className="trend-chart__marker" strokeDasharray="3 3" />
               <text x={x(i)} y={H - PAD.bottom + 32} textAnchor="middle" fontSize="11">
                 v{p.version}から
               </text>
@@ -85,16 +86,16 @@ export function TrendChart({ points }: { points: TrendPoint[] }) {
           {points.length > 1 && (
             <polyline
               fill="none"
-              stroke={s.color}
+              style={{ stroke: s.color }}
               strokeWidth={2}
               strokeDasharray={s.dash}
               points={points.map((p, i) => `${x(i)},${y(p[s.key])}`).join(" ")}
             />
           )}
           {points.map((p, i) => (
-            <circle key={i} cx={x(i)} cy={y(p[s.key])} r={3} fill={s.color} />
+            <circle key={i} cx={x(i)} cy={y(p[s.key])} r={3} style={{ fill: s.color }} />
           ))}
-          <text x={x(points.length - 1) + 8} y={labelY.get(s.key)} fontSize="12" fill={s.color} fontWeight="bold">
+          <text x={x(points.length - 1) + 8} y={labelY.get(s.key)} fontSize="12" className="trend-chart__label" style={{ fill: s.color }} fontWeight="bold">
             {s.label}
           </text>
         </g>

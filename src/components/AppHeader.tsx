@@ -2,6 +2,9 @@
 import type { AppState } from "../domain/types";
 import { exportReminder, STALE_DAYS } from "../domain/exportReminder";
 import { formatDateTime, SYNC_RESULT_LABELS } from "../labels";
+import { Icon } from "./Icon";
+import { MenuButton } from "./MenuButton";
+import { ThemeToggle } from "./ThemeToggle";
 
 interface Props {
   state: AppState;
@@ -32,29 +35,39 @@ export function AppHeader({ state, now, onGoToProposal, onExport, onImport, onEx
   return (
     <header className="app-header">
       <div className="app-header__row">
-        <p className="app-header__title">{state.project.name || "PM支援ツールPoC"}</p>
-        <nav className="app-header__menu" aria-label="データの保存">
-          <button type="button" onClick={onExport}>
-            JSONを書き出す
-          </button>
-          <button type="button" onClick={onImport} disabled={readOnlyReason !== null} aria-describedby={readOnlyReason ? "readonly-reason" : undefined}>
-            JSONを読み込む
-          </button>
-          {onExportBackups && (
-            <button type="button" onClick={onExportBackups}>
-              退避したデータを書き出す
+        <p className="app-header__title">
+          <span className="app-header__logo" aria-hidden="true" />
+          {state.project.name || "PM支援ツールPoC"}
+        </p>
+        <div className="app-header__actions">
+          <ThemeToggle />
+          <nav className="app-header__menu" aria-label="データの保存">
+            <button type="button" className="button--primary" onClick={onExport}>
+              <Icon name="download" />
+              <span className="app-header__export-label">JSONを書き出す</span>
             </button>
-          )}
-          <button
-            type="button"
-            className="button--danger"
-            onClick={onClear}
-            disabled={readOnlyReason !== null}
-            aria-describedby={readOnlyReason ? "readonly-reason" : undefined}
-          >
-            このブラウザの保存データを消去
-          </button>
-        </nav>
+            {/* 使う頻度が低い操作と、取り消せない消去は「その他」にたたむ（CR-007） */}
+            <MenuButton label="データのその他の操作">
+              <button type="button" onClick={onImport} disabled={readOnlyReason !== null} aria-describedby={readOnlyReason ? "readonly-reason" : undefined}>
+                JSONを読み込む
+              </button>
+              {onExportBackups && (
+                <button type="button" onClick={onExportBackups}>
+                  退避したデータを書き出す
+                </button>
+              )}
+              <button
+                type="button"
+                className="button--danger"
+                onClick={onClear}
+                disabled={readOnlyReason !== null}
+                aria-describedby={readOnlyReason ? "readonly-reason" : undefined}
+              >
+                このブラウザの保存データを消去
+              </button>
+            </MenuButton>
+          </nav>
+        </div>
       </div>
       {readOnlyReason && (
         <p id="readonly-reason" className="hint">
@@ -74,7 +87,7 @@ export function AppHeader({ state, now, onGoToProposal, onExport, onImport, onEx
           <ul>
             {state.objectives.map((o) => (
               <li key={o.id}>
-                <strong>{o.code}</strong> {o.content || "（内容が未入力）"}
+                <strong className="app-header__code">{o.code}</strong> {o.content || "（内容が未入力）"}
               </li>
             ))}
           </ul>

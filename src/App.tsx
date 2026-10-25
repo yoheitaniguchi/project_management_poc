@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { PREVIEW_PR } from "./buildInfo";
 import { AppHeader } from "./components/AppHeader";
+import { Icon, type IconName } from "./components/Icon";
 import { ImportDialog } from "./components/ImportDialog";
 import { Modal } from "./components/Modal";
 import { MonitorPage } from "./components/MonitorPage";
@@ -16,10 +17,10 @@ import { downloadText } from "./files";
 import { usePersistedState } from "./state/usePersistedState";
 
 type Tab = "proposal" | "plan" | "monitor";
-const TABS: { id: Tab; label: string }[] = [
-  { id: "proposal", label: "企画・目的" },
-  { id: "plan", label: "計画" },
-  { id: "monitor", label: "週次監視" },
+const TABS: { id: Tab; label: string; icon: IconName }[] = [
+  { id: "proposal", label: "企画・目的", icon: "target" },
+  { id: "plan", label: "計画", icon: "list" },
+  { id: "monitor", label: "週次監視", icon: "chart" },
 ];
 
 const newId = () => crypto.randomUUID();
@@ -134,12 +135,13 @@ export default function App() {
               setNotice(null);
             }}
           >
-            {t.label}
+            <Icon name={t.icon} />
+            <span>{t.label}</span>
           </button>
         ))}
       </nav>
       {notice && (
-        <p className="message--info" role="status">
+        <p className="message--info app-notice" role="status">
           {notice}{" "}
           <button type="button" className="link-button" onClick={() => setNotice(null)}>
             閉じる
