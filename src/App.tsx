@@ -150,7 +150,7 @@ export default function App() {
       <main className="app">
         {tab === "proposal" && <ProposalPage state={state} run={run} newId={newId} onGoToPlan={() => setTab("plan")} onboarding={onboarding} />}
         {tab === "plan" && <PlanPage state={state} run={run} newId={newId} onGoToProposal={() => setTab("proposal")} />}
-        {tab === "monitor" && <MonitorPage state={state} run={run} newId={newId} onGoToPlan={() => setTab("plan")} onExport={exportCurrent} />}
+        {tab === "monitor" && <MonitorPage state={state} run={run} newId={newId} onGoToPlan={() => setTab("plan")} onGoToProposal={() => setTab("proposal")} onExport={exportCurrent} />}
       </main>
 
       {importing && (
