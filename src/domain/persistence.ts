@@ -60,7 +60,30 @@ const MIGRATIONS: Record<number, Migration> = {
     out.schemaVersion = 3;
     return out;
   },
+  // 版3 → 4：WBS要素に完了の出どころ（completionSource）を追加した。版3までの完了は、すべて画面での手動の設定
+  3: (raw) => {
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(raw)) {
+      if (!(STATE_KEYS as readonly string[]).includes(k)) throw new MigrationError(`版3のデータに知らない項目「${k}」があります`);
+      out[k] = raw[k];
+    }
+    out.schemaVersion = 4;
+    if (Array.isArray(raw.wbsNodes)) out.wbsNodes = raw.wbsNodes.map((n: unknown, i: number) => migrateV3WbsNode(n, i));
+    return out;
+  },
 };
+
+function migrateV3WbsNode(n: unknown, i: number): unknown {
+  const V3_WBS_NODE_KEYS = [...V1_WBS_NODE_KEYS, "requiredKey"];
+  if (typeof n !== "object" || n === null || Array.isArray(n)) return n; // 形式の誤りは移行の後の検証で拒否する
+  const src = n as Record<string, unknown>;
+  const unknownKey = Object.keys(src).find((k) => !V3_WBS_NODE_KEYS.includes(k));
+  if (unknownKey !== undefined) throw new MigrationError(`版3のwbsNodes[${i}]に知らない項目「${unknownKey}」があります`);
+  const out: Record<string, unknown> = {};
+  for (const k of V3_WBS_NODE_KEYS) if (k in src) out[k] = src[k];
+  out.completionSource = src.completedOn === null || src.completedOn === undefined ? null : "manual";
+  return out;
+}
 
 const V1_WBS_NODE_KEYS = [
   "id", "code", "name", "kind", "category", "parentId", "asanaTaskGid",

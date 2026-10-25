@@ -298,7 +298,7 @@ function readProjectMember(r: Reader, v: unknown, p: string): ProjectMember | nu
 function readWbsNode(r: Reader, v: unknown, p: string): WbsNode | null {
   const o = r.record(v, p, [
     "id", "code", "name", "kind", "category", "parentId", "asanaTaskGid",
-    "plannedStart", "plannedEnd", "completedOn", "excluded", "excludedReason", "requiredKey",
+    "plannedStart", "plannedEnd", "completedOn", "completionSource", "excluded", "excludedReason", "requiredKey",
   ]);
   if (!o) return null;
   return {
@@ -312,6 +312,7 @@ function readWbsNode(r: Reader, v: unknown, p: string): WbsNode | null {
     plannedStart: r.nullableDate(o, "plannedStart", p),
     plannedEnd: r.nullableDate(o, "plannedEnd", p),
     completedOn: r.nullableDate(o, "completedOn", p),
+    completionSource: o.completionSource === null ? null : r.oneOf(o, "completionSource", p, ["manual", "asana"] as const),
     excluded: r.bool(o, "excluded", p),
     excludedReason: r.str(o, "excludedReason", p),
     requiredKey: o.requiredKey === null ? null : r.oneOf(o, "requiredKey", p, REQUIRED_WP_KEYS),
@@ -401,7 +402,7 @@ function readTimeEntry(r: Reader, v: unknown, p: string): TimeEntry | null {
     wbsNodeId: r.str(o, "wbsNodeId", p),
     memberId: r.nullableStr(o, "memberId", p),
     workDate: r.date(o, "workDate", p),
-    minutes: r.num(o, "minutes", p, { min: 0, max: LIMITS.maxMinutesPerEntry, integer: true }),
+    minutes: r.num(o, "minutes", p, { min: 0, max: LIMITS.maxHours * 60, integer: true }),
     source: r.oneOf(o, "source", p, ["asana_csv", "manual_csv"] as const),
     uniqueKey: r.str(o, "uniqueKey", p, { nonEmpty: true }),
   };
@@ -610,6 +611,7 @@ export function checkIntegrity(s: AppState): string[] {
     if (node?.excluded && !everBaselined.has(node.id)) errors.push(`timeEntries[${i}]：対象外のWPに実績は付けられません`);
     if (t.minutes <= 0) errors.push(`timeEntries[${i}]：工数が0です`);
     if (v1ApprovedOn !== null && t.workDate < v1ApprovedOn) errors.push(`timeEntries[${i}]：作業日がベースラインv1の合意日より前です`);
+    if (t.source === "manual_csv" && t.minutes > LIMITS.maxMinutesPerEntry) errors.push(`timeEntries[${i}]：1件の工数が24時間を超えています`);
     if (t.source === "manual_csv") {
       if (t.memberId === null) errors.push(`timeEntries[${i}]：取り込んだ実績にメンバーがありません`);
       if (!t.uniqueKey.startsWith(`manual_csv:${t.workDate}:${t.wbsNodeId}:`)) errors.push(`timeEntries[${i}]：一意キーが作業日・WBS要素と合いません`);
@@ -618,9 +620,11 @@ export function checkIntegrity(s: AppState): string[] {
   });
   s.evmSnapshots.forEach((e, i) => ref(`evmSnapshots[${i}].baselineId`, e.baselineId, baselineIds, "ベースライン"));
   errors.push(...snapshotErrors(s));
+  errors.push(...asanaEntryErrors(s));
 
   // WBSコードは一意（実績のCSVはWBSコードでWPを指すため）。必須WPは種類ごとに1件、WPであること
   const codes = new Set<string>();
+  const gids = new Set<string>();
   const requiredKeys = new Set<string>();
   s.wbsNodes.forEach((n, i) => {
     if (!WBS_CODE_PATTERN.test(n.code)) errors.push(`wbsNodes[${i}]：WBSコードの形式が正しくありません`);
@@ -641,6 +645,15 @@ export function checkIntegrity(s: AppState): string[] {
     const lastCompletion = lastCompletionOf.get(n.id);
     const loggedOn = lastCompletion?.action === "wbs.complete" ? (/^\{"completedOn":"(\d{4}-\d{2}-\d{2})"/.exec(lastCompletion.after ?? "")?.[1] ?? "?") : null;
     if (n.completedOn !== loggedOn) errors.push(`wbsNodes[${i}]：完了日が監査ログの記録と合いません`);
+    // 完了の出どころは、完了日と一緒に決まり、最後の完了の操作の記録と合う（記録に出どころが無いものは手動）
+    const loggedSource = loggedOn === null ? null : /^\{"completedOn":"[^"]+","source":"asana"/.test(lastCompletion?.after ?? "") ? "asana" : "manual";
+    if (n.completionSource !== loggedSource) errors.push(`wbsNodes[${i}]：完了の出どころが監査ログの記録と合いません`);
+    if (n.asanaTaskGid !== null) {
+      if (!ASANA_GID_PATTERN.test(n.asanaTaskGid)) errors.push(`wbsNodes[${i}]：AsanaタスクGIDの形式が正しくありません`);
+      else if (gids.has(n.asanaTaskGid)) errors.push(`wbsNodes[${i}]：AsanaタスクGID「${n.asanaTaskGid}」が重複しています`);
+      gids.add(n.asanaTaskGid);
+      if (n.kind !== "work_package") errors.push(`wbsNodes[${i}]：AsanaタスクGIDはWPにだけ付けられます`);
+    }
     if (n.parentId !== null && nodeById.get(n.parentId)?.kind === "work_package") {
       errors.push(`wbsNodes[${i}]：WPの下に要素は置けません`);
     }
@@ -712,6 +725,44 @@ export function checkIntegrity(s: AppState): string[] {
     if (i > 0 && timeOf(a.at) < timeOf(s.auditLogs[i - 1].at)) errors.push(`auditLogs[${i}]：日時が前のログより前です`);
   });
 
+  return errors;
+}
+
+/** AsanaのタスクGID（数字だけ） */
+export const ASANA_GID_PATTERN = /^\d{1,30}$/;
+/** Asana から取り込んだ実績の一意キー：asana_csv:タスクGID:取り込んだ時点の累計（分） */
+export const ASANA_KEY_PATTERN = /^asana_csv:(\d{1,30}):(\d{1,9})$/;
+
+/**
+ * Asana から取り込んだ実績（差分方式。人間の判断 2026-10-25）の整合性。
+ * タスクごとに、累計の小さい順に並べたとき、各実績の工数は「その累計 − 1つ前の累計」で、作業日は前の実績より前にならない。
+ * 実績のWPは、そのタスクGIDを持つWP
+ */
+function asanaEntryErrors(s: AppState): string[] {
+  const errors: string[] = [];
+  const gidOfNode = new Map(s.wbsNodes.map((n) => [n.id, n.asanaTaskGid]));
+  const byGid = new Map<string, { i: number; cumulative: number; t: TimeEntry }[]>();
+  s.timeEntries.forEach((t, i) => {
+    if (t.source !== "asana_csv") return;
+    const m = ASANA_KEY_PATTERN.exec(t.uniqueKey);
+    if (!m) {
+      errors.push(`timeEntries[${i}]：Asanaの実績の一意キーの形式が正しくありません`);
+      return;
+    }
+    if (t.memberId === null) errors.push(`timeEntries[${i}]：取り込んだ実績にメンバーがありません`);
+    if (gidOfNode.get(t.wbsNodeId) !== m[1]) errors.push(`timeEntries[${i}]：WPのAsanaタスクGIDと一意キーが合いません`);
+    const list = byGid.get(m[1]) ?? [];
+    list.push({ i, cumulative: Number(m[2]), t });
+    byGid.set(m[1], list);
+  });
+  for (const list of byGid.values()) {
+    list.sort((a, b) => a.cumulative - b.cumulative);
+    list.forEach((x, k) => {
+      const prev = k === 0 ? null : list[k - 1];
+      if (x.t.minutes !== x.cumulative - (prev?.cumulative ?? 0)) errors.push(`timeEntries[${x.i}]：Asanaの実績の工数が累計の差と合いません`);
+      if (prev && x.t.workDate < prev.t.workDate) errors.push(`timeEntries[${x.i}]：Asanaの実績の作業日が前の取込より前です`);
+    });
+  }
   return errors;
 }
 

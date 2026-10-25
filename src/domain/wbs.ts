@@ -79,6 +79,7 @@ const blankNode = (fields: Pick<WbsNode, "id" | "code" | "name" | "kind" | "cate
   plannedStart: null,
   plannedEnd: null,
   completedOn: null,
+  completionSource: null,
   excluded: false,
   excludedReason: "",
   requiredKey: null,

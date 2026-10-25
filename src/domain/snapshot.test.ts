@@ -317,7 +317,7 @@ describe("版2 → 3 の移行", () => {
   it("スナップショットの無い版2のデータは、そのまま版3になる", () => {
     const raw = fixtureRaw();
     const v2 = { ...raw, schemaVersion: 2 };
-    const r = migrate(v2);
+    const r = migrate(v2, undefined, 3);
     expect(r.ok && (r.value as Record<string, unknown>).schemaVersion).toBe(3);
   });
 

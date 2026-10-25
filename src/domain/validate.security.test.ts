@@ -71,8 +71,12 @@ describe("[@security] validateState は不正なデータを拒否する", () =>
     list(huge, "estimates")[0].hours = 1e308;
     rejectsWith(huge, /hours：上限/);
     const longEntry = fixtureRaw();
+    // 手入力の実績は1件24時間まで（Asana の差分は1件で24時間を超えうるので、取込元ごとに確かめる）
     longEntry.timeEntries = [{ ...entry, minutes: 24 * 60 + 1 }];
-    rejectsWith(longEntry, /minutes：上限/);
+    rejectsWith(longEntry, /1件の工数が24時間を超えています/);
+    const hugeEntry = fixtureRaw();
+    hugeEntry.timeEntries = [{ ...entry, source: "asana_csv", minutes: 10_000 * 60 + 1 }];
+    rejectsWith(hugeEntry, /minutes：上限/);
   });
 
   it("[@security] 決められていない列挙値・不正な日付を拒否する", () => {

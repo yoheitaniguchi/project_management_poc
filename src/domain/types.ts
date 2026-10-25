@@ -3,7 +3,7 @@
 import { DEFAULT_ALERT_THRESHOLD_POINTS, DEFAULT_HOLIDAYS } from "../config/holidays";
 
 /** 状態全体のスキーマの版。型を変えたら上げ、persistence.ts に移行関数を足す */
-export const CURRENT_SCHEMA_VERSION = 3;
+export const CURRENT_SCHEMA_VERSION = 4;
 
 /**
  * WBSテンプレートの必須WP（CLAUDE.md 3.3）。見積漏れを防ぐため、テンプレートから展開したこれらのWPは削除できない
@@ -43,6 +43,8 @@ export const REQUIRED_WP_CATEGORY: Record<RequiredWpKey, WorkCategory> = {
  */
 export const WBS_CODE_PATTERN = /^[0-9A-Za-z][0-9A-Za-z._-]{0,39}$/;
 export type TimeEntrySource = "asana_csv" | "manual_csv";
+/** 完了の出どころ（CLAUDE.md 5章：Asana の取込を入れた後は、Asana の完了を手動の設定より優先する） */
+export type CompletionSource = "manual" | "asana";
 export type SyncResult = "success" | "failure";
 export type GateDecision = "approved" | "returned";
 
@@ -107,6 +109,8 @@ export interface WbsNode {
   plannedEnd: string | null;
   /** 手動で完了にした日（CLAUDE.md 5章の一時変更）。未完了は null */
   completedOn: string | null;
+  /** 完了の出どころ。未完了は null。版4で追加 */
+  completionSource: CompletionSource | null;
   excluded: boolean;
   excludedReason: string;
   /** テンプレートの必須WPなら、その種類（削除できない）。それ以外は null。版2で追加 */

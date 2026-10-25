@@ -34,7 +34,7 @@ export interface ImportOutcome {
 /** 一意キー（人間の判断：作業日・WPのID・メモ）。読み込み時の検証でも同じ形を確かめる */
 export const manualKey = (workDate: string, wbsNodeId: string, memo: string) => `manual_csv:${workDate}:${wbsNodeId}:${memo}`;
 
-function syncRun(fileName: string, now: Date, newId: () => string, result: SyncRun["result"], count: number, errors: string[]): SyncRun {
+export function syncRun(fileName: string, now: Date, newId: () => string, result: SyncRun["result"], count: number, errors: string[]): SyncRun {
   const shown = errors.slice(0, MAX_ERRORS_SHOWN);
   const more = errors.length > shown.length ? `（ほか${errors.length - shown.length}件）` : "";
   const error = errors.length === 0 ? null : (shown.join(" / ") + more).slice(0, MAX_ERROR_LENGTH);
@@ -71,14 +71,16 @@ export function importManualCsv(state: AppState, fileName: string, text: string,
   const nodeByCode = new Map(state.wbsNodes.map((n) => [n.code, n]));
   const everBaselined = new Set(state.baselineItems.map((x) => x.wbsNodeId));
   const existing = new Map(state.timeEntries.map((t) => [t.uniqueKey, t]));
-  // 1日の合計（取込済みの実績を含む）と、同じ作業日・WPの取込済みのメモ
+  // 1日の合計（取込済みの手入力の実績を含む。Asana の差分は作業日が書き出した日になるので数えない）と、同じ作業日・WPの取込済みのメモ
   const minutesOfDay = new Map<string, number>();
   const memosOf = new Map<string, Set<string>>();
   for (const t of state.timeEntries) {
+    if (t.source !== "manual_csv") continue;
     minutesOfDay.set(t.workDate, (minutesOfDay.get(t.workDate) ?? 0) + t.minutes);
     const k = `${t.workDate}:${t.wbsNodeId}`;
     memosOf.set(k, (memosOf.get(k) ?? new Set()).add(t.uniqueKey));
   }
+  const withAsana = new Set(state.timeEntries.filter((t) => t.source === "asana_csv").map((t) => t.wbsNodeId));
   const seen = new Map<string, number>();
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -121,6 +123,8 @@ export function importManualCsv(state: AppState, fileName: string, text: string,
     const dayTotal = (minutesOfDay.get(workDate) ?? 0) + minutes;
     if (dayTotal > MAX_MINUTES_PER_DAY) return err(`${workDate} の実績の合計が24時間を超えます（取込済みを含む）`);
     minutesOfDay.set(workDate, dayTotal);
+    // 人間の判断（2026-10-25）：Asana の取込を始めたら手入力のCSVは使わない。両方の実績があれば二重になっていないか確かめてもらう
+    if (withAsana.has(node.id)) warnings.push(`${line}行目：${code} には Asana から取り込んだ実績もあります（同じ作業を両方で入れていないか確かめてください）`);
     if (memosOf.has(`${workDate}:${node.id}`)) warnings.push(`${line}行目：同じ作業日・WBSコードで、メモが違う取込済みの実績があります（二重になっていないか確かめてください）`);
     added.push({ id: newId(), wbsNodeId: node.id, memberId, workDate, minutes, source: "manual_csv", uniqueKey: key });
   });
