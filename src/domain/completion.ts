@@ -3,21 +3,31 @@
 import { appendAuditLog } from "./auditLog";
 import { localDate } from "./calendar";
 import { operatorName, type OpResult } from "./proposal";
-import type { AppState } from "./types";
+import type { AppState, CompletionSource } from "./types";
 import { isPlanDate } from "./validate";
 
 const ok = (state: AppState): OpResult => ({ ok: true, state });
 const fail = (error: string): OpResult => ({ ok: false, error });
 
-/** WPを完了にする（完了日を変えるときも同じ操作）。完了日は今日以前 */
-export function setCompleted(state: AppState, wbsNodeId: string, completedOn: string, now: Date, newId: () => string): OpResult {
+/**
+ * WPを完了にする（完了日を変えるときも同じ操作）。完了日は今日以前。
+ * source は完了の出どころ：画面の操作は manual、Asana の取込は asana（5章：Asana の完了を手動の設定より優先する）
+ */
+export function setCompleted(
+  state: AppState,
+  wbsNodeId: string,
+  completedOn: string,
+  now: Date,
+  newId: () => string,
+  source: CompletionSource = "manual",
+): OpResult {
   const node = state.wbsNodes.find((n) => n.id === wbsNodeId);
   if (!node || node.kind !== "work_package") return fail("WPが見つかりません");
   if (node.excluded) return fail("対象外のWPは完了にできません");
   if (typeof completedOn !== "string" || !isPlanDate(completedOn)) return fail("完了日を入力してください");
   if (completedOn > localDate(now)) return fail("完了日に未来の日付は入れられません");
-  if (node.completedOn === completedOn) return ok(state);
-  const next: AppState = { ...state, wbsNodes: state.wbsNodes.map((n) => (n.id === wbsNodeId ? { ...n, completedOn } : n)) };
+  if (node.completedOn === completedOn && node.completionSource === source) return ok(state);
+  const next: AppState = { ...state, wbsNodes: state.wbsNodes.map((n) => (n.id === wbsNodeId ? { ...n, completedOn, completionSource: source } : n)) };
   return ok(
     appendAuditLog(
       next,
@@ -27,8 +37,8 @@ export function setCompleted(state: AppState, wbsNodeId: string, completedOn: st
         targetId: wbsNodeId,
         action: "wbs.complete",
         before: { completedOn: node.completedOn },
-        // 監査ログは長いと末尾から切り詰めるので、完了日を先頭に置く
-        after: { completedOn, code: node.code, name: node.name },
+        // 監査ログは長いと末尾から切り詰めるので、完了日と出どころを先頭に置く（手動の記録は出どころを書かない。版3までの記録と同じ形）
+        after: source === "asana" ? { completedOn, source, code: node.code, name: node.name } : { completedOn, code: node.code, name: node.name },
       },
       now,
       newId,
@@ -44,7 +54,7 @@ export function clearCompleted(state: AppState, wbsNodeId: string, now: Date, ne
   const node = state.wbsNodes.find((n) => n.id === wbsNodeId);
   if (!node || node.kind !== "work_package") return fail("WPが見つかりません");
   if (node.completedOn === null) return fail("このWPは完了になっていません");
-  const next: AppState = { ...state, wbsNodes: state.wbsNodes.map((n) => (n.id === wbsNodeId ? { ...n, completedOn: null } : n)) };
+  const next: AppState = { ...state, wbsNodes: state.wbsNodes.map((n) => (n.id === wbsNodeId ? { ...n, completedOn: null, completionSource: null } : n)) };
   return ok(
     appendAuditLog(
       next,
