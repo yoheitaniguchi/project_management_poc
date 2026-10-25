@@ -166,7 +166,7 @@ export function PlanPage({ state, run, newId, onGoToProposal }: Props) {
           </div>
         ) : (
           <table className="wbs-table">
-            <caption>WBS（目的に紐付かないWPは「状態」の列に「未紐付け」と表示します。「完了」は手動で設定した完了日です）</caption>
+            <caption>WBS（目的に紐付かないWPは「状態」の列に「未紐付け」と表示します。「完了」は完了日で、Asana から取り込んだ完了には「Asana の完了」と添えます）</caption>
             <thead>
               <tr>
                 <th scope="col">WBSコード</th>
@@ -205,7 +205,7 @@ export function PlanPage({ state, run, newId, onGoToProposal }: Props) {
                       {wp
                         ? node.excluded
                           ? `対象外（${node.excludedReason}）`
-                          : [unlinked ? "未紐付け" : "", node.completedOn ? `完了（${node.completedOn}）` : ""].filter(Boolean).join("・") || "—"
+                          : [unlinked ? "未紐付け" : "", node.completedOn ? `完了（${node.completedOn}${node.completionSource === "asana" ? "、Asana の完了" : ""}）` : ""].filter(Boolean).join("・") || "—"
                         : "フェーズ"}
                     </td>
                     <td>
@@ -498,13 +498,17 @@ function NodeEditor({ state, node, exec, error, newId, onAddWp, onRemove }: Edit
             <>
               <h3>完了</h3>
               <p className="hint" id="complete-hint">
-                Asana の取込を入れるまでは、完了をここで設定します。完了日には実際に終わった日を入れてください（EVM では、完了日が基準日以前なら完了（100%）として数えます）。設定と取り消しは監査ログに残ります。
+                Asana で管理していないWPは、完了をここで設定します。完了日には実際に終わった日を入れてください（EVM では、完了日が基準日以前なら完了（100%）として数えます）。設定と取り消しは監査ログに残ります。
+                Asana の取込では Asana の完了が優先されるため、Asana で完了のタスクは、ここで変えても次の取込で Asana の完了日に戻ります。
                 {node.completedOn !== null && "日付を変えると、完了日を変えられます。"}
               </p>
               {!hasActuals && <p className="hint">このWPには実績がありません。実績を取り込んでから完了にすると、CPI が正しく出ます。</p>}
               <p ref={completionRef} tabIndex={-1} role="status">
-                {node.completedOn ? `完了（${node.completedOn}）` : "未完了"}
+                {node.completedOn ? `完了（${node.completedOn}${node.completionSource === "asana" ? "、Asana の完了" : ""}）` : "未完了"}
               </p>
+              {node.completionSource === "asana" && (
+                <p className="message--warn">この完了は Asana から取り込んだものです。ここで変えても、次の Asana の取込で Asana の完了日に戻ります。</p>
+              )}
               <div>
                 <label htmlFor="completed-on">完了日</label>{" "}
                 <input
