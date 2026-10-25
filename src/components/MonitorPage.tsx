@@ -1,6 +1,7 @@
 // 週次監視画面（CLAUDE.md 7.3）：最新のスナップショットの指標のカード、要対応、残りのWP・実績が未入力のWP、
 // PV・EV・ACの推移、スナップショットの作成とCSV出力。スナップショットは作成後に変更できないので、作成の前にプレビューと確認を挟む
 import { useEffect, useRef, useState } from "react";
+import { currentViewer, personalActuals } from "../domain/access";
 import { localDate } from "../domain/calendar";
 import { isOutdatedSnapshot, remainingWps, unavailableReason, wpsWithoutActuals, type IndicatorKey, type SnapshotWp } from "../domain/monitor";
 import {
@@ -17,7 +18,7 @@ import {
 import { latestBaselineOf, type AppState, type EvmSnapshot } from "../domain/types";
 import type { EvmResult } from "../domain/evm";
 import { downloadText } from "../files";
-import { formatDateTime, SYNC_RESULT_LABELS } from "../labels";
+import { formatDateTime, ROLE_LABELS, SYNC_RESULT_LABELS } from "../labels";
 import { Modal } from "./Modal";
 import type { Run } from "./ProposalPage";
 import { TrendChart } from "./TrendChart";
@@ -27,6 +28,7 @@ interface Props {
   run: Run;
   newId: () => string;
   onGoToPlan: () => void;
+  onGoToProposal: () => void;
   onExport: () => void;
 }
 
@@ -126,7 +128,7 @@ function WpList({ items, empty, caption }: { items: SnapshotWp[]; empty: string;
   );
 }
 
-export function MonitorPage({ state, run, newId, onGoToPlan, onExport }: Props) {
+export function MonitorPage({ state, run, newId, onGoToPlan, onGoToProposal, onExport }: Props) {
   const now = new Date();
   const [asOf, setAsOf] = useState(() => defaultAsOf(new Date()));
   const [confirming, setConfirming] = useState(false);
@@ -234,6 +236,8 @@ export function MonitorPage({ state, run, newId, onGoToPlan, onExport }: Props) 
           )}
         </section>
       )}
+
+      {latest && <PersonalActualsSection state={state} asOf={latest.asOf} onGoToProposal={onGoToProposal} />}
 
       <section aria-labelledby="sec-trend">
         <h2 id="sec-trend">PV・EV・AC の推移</h2>
@@ -363,6 +367,54 @@ export function MonitorPage({ state, run, newId, onGoToPlan, onExport }: Props) 
         <ConfirmDialog asOf={asOf} evm={preview.evm} withoutActuals={previewWithoutActuals} threshold={state.settings.alertThresholdPoints} lastSync={lastSync} onCancel={() => setConfirming(false)} onCreate={create} />
       )}
     </div>
+  );
+}
+
+/** メンバー別の実績工数（4章：本人とPMのみ。権限の判定を通したものだけを出す） */
+function PersonalActualsSection({ state, asOf, onGoToProposal }: { state: AppState; asOf: string; onGoToProposal: () => void }) {
+  const viewer = currentViewer(state);
+  const viewerName = viewer === null ? "（PM未設定）" : state.members.find((m) => m.id === viewer)?.name || "（氏名が未入力）";
+  const rows = personalActuals(state, viewer, asOf);
+  return (
+    <section aria-labelledby="sec-personal">
+      <h2 id="sec-personal">メンバー別の実績工数（基準日 {asOf} まで）</h2>
+      <p className="hint">
+        実績工数はプロジェクト管理にのみ使い、人事評価には使いません。個人別の値は、本人とPMだけが見られます。閲覧者：{viewerName}（PMとして自己申告。認証はありません）
+      </p>
+      {viewer === null ? (
+        <p>
+          PMが未設定のため、個人別の値は表示しません。{" "}
+          <button type="button" className="link-button" onClick={onGoToProposal}>
+            企画・目的画面で体制にPMを登録する
+          </button>
+        </p>
+      ) : rows.length === 0 ? (
+        <p>基準日までの実績工数はありません。</p>
+      ) : (
+        <>
+          <p className="hint">今のデータで合計します（作成した後に過去の作業日の実績を取り込むと、上のカードの AC と合わないことがあります）。</p>
+          <table>
+            <caption>メンバー別の実績工数の合計</caption>
+            <thead>
+              <tr>
+                <th scope="col">メンバー</th>
+                <th scope="col">役割</th>
+                <th scope="col">実績工数</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.memberId ?? "none"}>
+                  <td>{r.name}</td>
+                  <td>{r.role ? ROLE_LABELS[r.role] : "—"}</td>
+                  <td>{hours(r.hours)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+    </section>
   );
 }
 
