@@ -5,6 +5,7 @@ import { PREVIEW_PR } from "./buildInfo";
 import { AppHeader } from "./components/AppHeader";
 import { ImportDialog } from "./components/ImportDialog";
 import { Modal } from "./components/Modal";
+import { MonitorPage } from "./components/MonitorPage";
 import { PlanPage } from "./components/PlanPage";
 import { ProposalPage, type Run } from "./components/ProposalPage";
 import { StorageBanner } from "./components/StorageBanner";
@@ -149,12 +150,7 @@ export default function App() {
       <main className="app">
         {tab === "proposal" && <ProposalPage state={state} run={run} newId={newId} onGoToPlan={() => setTab("plan")} onboarding={onboarding} />}
         {tab === "plan" && <PlanPage state={state} run={run} newId={newId} onGoToProposal={() => setTab("proposal")} />}
-        {tab === "monitor" && (
-          <div className="page">
-            <h1 tabIndex={-1}>週次監視</h1>
-            <p>準備中です（3週目に追加します）。ベースラインの確定と実績の入力の後に使います。</p>
-          </div>
-        )}
+        {tab === "monitor" && <MonitorPage state={state} run={run} newId={newId} onGoToPlan={() => setTab("plan")} onExport={exportCurrent} />}
       </main>
 
       {importing && (

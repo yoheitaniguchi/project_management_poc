@@ -45,6 +45,13 @@ export function localDate(now: Date): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
+/** 端末の時刻での日時（YYYY-MM-DD HH:MM）。CSVなど、人が読む記録に使う */
+export function localDateTime(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${localDate(d)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 /** 二分探索：昇順の配列で x 以上になる最初の位置 */
 function lowerBound(sorted: readonly string[], x: string): number {
   let lo = 0;

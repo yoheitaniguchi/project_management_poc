@@ -293,3 +293,59 @@ td {
   display: block;
   margin-left: 2em;
 }
+
+/* ---- 週次監視画面（PR-L） ---- */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.card {
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+.card dt {
+  font-size: 0.9em;
+  color: #57606a;
+}
+
+.card dd {
+  margin: 4px 0 0;
+}
+
+.card__value {
+  font-size: 1.6em;
+  font-weight: bold;
+}
+
+.card__na {
+  font-weight: bold;
+}
+
+.preview {
+  border: 1px dashed #57606a;
+  padding: 4px 12px;
+  margin: 8px 0;
+}
+
+.trend-chart {
+  width: 100%;
+  max-width: 720px;
+  height: auto;
+}
+
+.card__line {
+  display: block;
+}
+
+/* 要対応：ほかの注意書きと区別するため、枠を太くする（文言でも示す） */
+.alert-box {
+  border: 3px solid #cf222e;
+  background: #ffebe9;
+  padding: 8px 12px;
+  font-size: 1.05em;
+}

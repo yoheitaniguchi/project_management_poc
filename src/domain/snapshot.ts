@@ -4,7 +4,7 @@
 // - 基準日と版の組で1件まで（改版した後は、同じ基準日を新しい版で作り直せる）
 // - 基準日は、未来の日付と、最新の版の合意日より前の日付を受け付けない
 // - 監査ログには記録しない（4章で記録が必須の操作ではない。作成後の変更は読み込み時の検査で防ぐ）
-import { localDate } from "./calendar";
+import { localDate, localDateTime } from "./calendar";
 import { toCsv } from "./csvWrite";
 import { computeEvm, type EvmResult } from "./evm";
 import type { OpResult } from "./proposal";
@@ -95,12 +95,12 @@ const cell = (v: number | null, digits: number) => (v === null ? "" : round(v, d
 
 export const SNAPSHOT_CSV_HEADER = [
   "基準日", "版", "BAC（時間）", "PV（時間）", "EV（時間）", "AC（時間）", "CPI", "SPI", "EAC（時間）",
-  "工数消化率（%）", "進捗率（%）", "ずれ（ポイント）", "閾値（ポイント）", "要対応", "作成日時",
+  "工数消化率（%）", "進捗率（%）", "ずれ（ポイント）", "閾値（ポイント）", "要対応", "作成日時（端末の時刻）",
 ] as const;
 
 /**
  * 週次スナップショットのCSV（UTF-8。BOM は画面で付ける）。基準日の順。
- * 時間・CPI・SPI は小数2桁、率は%で小数1桁に丸める。算出できない値は空欄。数値は数値のまま書く（負のずれが数式の対策で文字にならないように）
+ * 時間・CPI・SPI は小数2桁、率は%で小数1桁に丸める。作成日時は端末の時刻（人間の判断）。算出できない値は空欄。数値は数値のまま書く（負のずれが数式の対策で文字にならないように）
  */
 export function snapshotCsv(state: AppState): string {
   const rows = sortedSnapshots(state).map((e) => [
@@ -118,7 +118,7 @@ export function snapshotCsv(state: AppState): string {
     e.gapPoints ?? "",
     e.thresholdPoints,
     e.alert ? "要対応" : "",
-    e.createdAt,
+    localDateTime(e.createdAt),
   ]);
   return toCsv([[...SNAPSHOT_CSV_HEADER], ...rows]);
 }
