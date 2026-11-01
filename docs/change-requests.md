@@ -99,3 +99,15 @@ PoCの範囲外の機能・改善や、計画の変更は、実装せずにこ�
 | 工数と日程への影響の見込み | 軽：PR1本。人間の作業はPRプレビューでのスマホ・PCの確認とレビューで30〜45分程度 |
 | 寄与する目的 | O2（間接）：スマホからも実績・週次監視を確かめやすくし、毎週の記録の負担を下げる |
 | 判断 | 承認（2026-10-25、監理者。方向性はLinear/Vercel風、スマホは下部固定タブバー） |
+
+### CR-008 TypeScript のメジャー更新（5 → 7、Dependabot #30）をPoCの間は見送る
+| 項目 | 内容 |
+| --- | --- |
+| 記録日 | 2026-11-01 |
+| 内容 | (1) PoCの間は TypeScript を 5.x 系（現在 5.9.3）に据え置く。`.github/dependabot.yml` の `ignore` に `typescript` の `version-update:semver-major` を加え、react の判断（2026-10-21）と同じく理由と日付をコメントに残す。minor・patch は `npm-minor-and-patch` のグループで引き続き受ける。この ignore は 6.0 を含むメジャー更新をすべて止める。Dependabot の #30（5.9.3 → 7.0.2）は、この変更のマージ後に閉じる。アプリのコード・tsconfig・テストは変えない。(2) 展開時の更新の案（決めるのは展開を判断するとき）：ignore を外して TypeScript 6.0 へ上げる。6.0 から `types` の既定値が「なし」になるため、tsconfig に `"types": ["node"]` を足す見込み（`vite.config.ts` の `process.env` と、`security/` のテスト3本が Node.js の機能を使う。`vite/client` の型は `src/vite-env.d.ts` から読むため影響しない見込み。`strict` は既に true で、`target ES2022`・`moduleResolution Bundler` は廃止された設定に当たらない）。7 へは typescript-eslint が TS 7 に対応してから上げる |
+| きっかけ | Dependabot が 2026-10-26 に PR #30（typescript 5.9.3 → 7.0.2）を作り、CI の test・build の両ジョブが `npm ci` の依存解決（ERESOLVE）で失敗した（lint・型チェック・単体テスト・ビルドは実行されていない）。原因は、typescript-eslint 8.72.0 の peerDependencies が `typescript >=4.8.4 <6.1.0` で、TS 7 を受け付けないこと。typescript-eslint の TS 7 対応の要望（issue #12518）は「予定なし」で閉じられ、TS 7.1 で出る予定の新しいコンパイラAPIを待つ状態（外部の情報。2026-11-01 時点）。CIが成功しないため、事後の記録でよい決まり（冒頭）には当たらず、#30 を閉じる前に記録する |
+| 計画内か外か | 計画外（依存の保守。3.1の機能には含まれない。CR-002・CR-005・CR-006 と同じ扱い） |
+| 工数と日程への影響の見込み | (1) 軽：`.github/dependabot.yml` の ignore に2行とコメント2行を足すだけ。人間の作業は差分の確認と #30 を閉じることで10分程度。PoCの日程への影響は無い。(2) PoCの工数・日程には影響しない（展開時の作業）。6.0 は軽：tsconfig の1行と、lint・型チェック・単体テスト・ビルドの再確認。7 は、lint の構成（typescript-eslint の対応版への更新、または TS 6 との併用）しだいで中になりうる |
+| 寄与する目的 | なし（PoCの品質・安全性の維持。TS 7 に上げると lint が動かず、6.3 の安全対策として使っている `no-explicit-any` と `dangerouslySetInnerHTML` の禁止がCIで効かなくなるのを避ける） |
+| 判断 | (1) 承認（2026-11-01、監理者）。(2) 未判断（展開を判断するときに決める。`docs/poc-report.md` の「6. 展開に向けて残る課題」の「技術構成」に記載した） |
+| 残るリスク | TypeScript は開発時だけ使う依存（devDependencies）で、配布物には入らない。5.x への修正版は今後出ない見込みで、周辺のツールが新しい TS を前提にすると、そちらの更新も詰まるおそれがある。PoCの残り（2026-11-20 まで約3週間）では小さい。開発用の依存の脆弱性は、CIの「開発依存を含む脆弱性」（`npm audit`。結果の表示のみで、CIは失敗にならない）で確かめる |

@@ -21,6 +21,10 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "@types/react-dom"
         update-types: ["version-update:semver-major"]
+      # PoCの間は typescript のメジャー更新（5 → 7）を提案しない。typescript-eslint が TS 7 に未対応で、
+      # lint（6.3の安全対策）が動かなくなるため。minor・patch は受ける（人の判断。2026-11-01。CR-008）
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
